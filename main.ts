@@ -696,6 +696,8 @@ class CardDescriptionModal extends Modal {
 
         // Фокус на textarea при открытии
         this.textarea.focus();
+        // Выделение всего текста описания
+        this.textarea.select();
     }
 
     onClose() {
