@@ -21,5 +21,6 @@ export default {
     saveImagesDesc: 'Если включено, изображения сохраняются в локальное хранилище Obsidian.',
     cardDescription: 'Описание карточки',
     changeToHorizontal: 'Изменить на горизонтальную карточку',
-    changeToVertical: 'Изменить на вертикальную карточку'
+    changeToVertical: 'Изменить на вертикальную карточку',
+    cardEndMarkerNotFound: 'Маркер конца карточки не найден'
 };

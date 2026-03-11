@@ -103,18 +103,17 @@ export default class OpenGraphPlugin extends Plugin {
                     });
 
                     // --- Пункт меню переключения ориентации ---
-                    const cardElement = this.lastContextEventTarget?.closest('.og-card') as HTMLElement | null;
-                    if (cardElement) {
-                        const isVertical = cardElement.classList.contains('og-card-vertical');
-                        menu.addItem((item) => {
-                            item
-                                .setTitle(isVertical ? t('changeToHorizontal') : t('changeToVertical'))
-                                .setIcon(isVertical ? 'arrow-right' : 'arrow-down')
-                                .onClick(() => {
-                                    this.toggleCardOrientation(editor, cardInfo, cardElement);
-                                });
-                        });
-                    }
+                    // Проверяем ориентацию через HTML-код карточки (работает и в Live Preview, и при редактировании HTML)
+                    const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
+                    const isVertical = cardHtml.includes('og-card-vertical');
+                    menu.addItem((item) => {
+                        item
+                            .setTitle(isVertical ? t('changeToHorizontal') : t('changeToVertical'))
+                            .setIcon(isVertical ? 'arrow-right' : 'arrow-down')
+                            .onClick(() => {
+                                this.toggleCardOrientation(editor, cardInfo);
+                            });
+                    });
 
                 } else {
                     const urlInfo = this.getUrlUnderCursor(editor);
@@ -530,6 +529,8 @@ export default class OpenGraphPlugin extends Plugin {
 </div>`;
 
             editor.replaceRange(htmlBlock, urlInfo.from, urlInfo.to);
+            // Устанавливаем курсор в начало карточки для предотвращения прыжков прокрутки
+            editor.setCursor(urlInfo.from);
             new Notice(t('cardCreated'));
         } catch (error) {
             console.error(error);
@@ -546,7 +547,7 @@ export default class OpenGraphPlugin extends Plugin {
         const cardEndIndex = cardHtml.indexOf(cardEndMarker);
 
         if (cardEndIndex === -1) {
-            new Notice('Card end marker not found');
+            new Notice(t('cardEndMarkerNotFound'));
             return;
         }
 
@@ -580,11 +581,13 @@ export default class OpenGraphPlugin extends Plugin {
         }
 
         editor.replaceRange(newCardHtml, cardInfo.from, cardInfo.to);
+        // Устанавливаем курсор в начало карточки для предотвращения прыжков прокрутки
+        editor.setCursor(cardInfo.from);
     }
 
-    toggleCardOrientation(editor: Editor, cardInfo: { url: string, userText: string, from: any, to: any }, cardElement: HTMLElement) {
-        const isVertical = cardElement.classList.contains('og-card-vertical');
+    toggleCardOrientation(editor: Editor, cardInfo: { url: string, userText: string, from: any, to: any }) {
         const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
+        const isVertical = cardHtml.includes('og-card-vertical');
 
         let newCardHtml: string;
 
@@ -597,6 +600,8 @@ export default class OpenGraphPlugin extends Plugin {
         }
 
         editor.replaceRange(newCardHtml, cardInfo.from, cardInfo.to);
+        // Устанавливаем курсор в начало карточки для предотвращения прыжков прокрутки
+        editor.setCursor(cardInfo.from);
     }
 
     escapeHTML(str: string) {

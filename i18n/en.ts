@@ -21,5 +21,6 @@ export default {
     saveImagesDesc: 'If enabled, images will be saved to the local Obsidian vault.',
     cardDescription: 'Card description',
     changeToHorizontal: 'Change to horizontal card',
-    changeToVertical: 'Change to vertical card'
+    changeToVertical: 'Change to vertical card',
+    cardEndMarkerNotFound: 'Card end marker not found'
 };
