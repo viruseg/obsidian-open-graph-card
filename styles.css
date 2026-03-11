@@ -148,3 +148,14 @@
     border-right: none;
     border-bottom: 1px solid var(--background-modifier-border);
 }
+
+.og-card-vertical .og-content
+{
+    padding-bottom: 0;
+}
+
+.og-card-vertical .og-user-text
+{
+    width: -webkit-fill-available;
+    padding: 0 1rem 1rem;
+}

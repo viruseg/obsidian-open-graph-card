@@ -1,4 +1,4 @@
-import { Plugin, Editor, MarkdownView, Menu, requestUrl, Notice, PluginSettingTab, App, Setting, TFile } from 'obsidian';
+import { Plugin, Editor, MarkdownView, Menu, requestUrl, Notice, PluginSettingTab, App, Setting, TFile, Modal } from 'obsidian';
 import fetch from 'node-fetch';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { SocksProxyAgent } from 'socks-proxy-agent';
@@ -85,6 +85,36 @@ export default class OpenGraphPlugin extends Plugin {
                                 editor.replaceRange(replacement, cardInfo.from, cardInfo.to);
                             });
                     });
+
+                    // --- Пункт меню "Описание карточки" ---
+                    menu.addItem((item) => {
+                        item
+                            .setTitle(t('cardDescription'))
+                            .setIcon('text')
+                            .onClick(() => {
+                                new CardDescriptionModal(
+                                    this.app,
+                                    cardInfo.userText,
+                                    async (newText) => {
+                                        await this.updateCardUserText(editor, cardInfo, newText);
+                                    }
+                                ).open();
+                            });
+                    });
+
+                    // --- Пункт меню переключения ориентации ---
+                    const cardElement = this.lastContextEventTarget?.closest('.og-card') as HTMLElement | null;
+                    if (cardElement) {
+                        const isVertical = cardElement.classList.contains('og-card-vertical');
+                        menu.addItem((item) => {
+                            item
+                                .setTitle(isVertical ? t('changeToHorizontal') : t('changeToVertical'))
+                                .setIcon(isVertical ? 'arrow-right' : 'arrow-down')
+                                .onClick(() => {
+                                    this.toggleCardOrientation(editor, cardInfo, cardElement);
+                                });
+                        });
+                    }
 
                 } else {
                     const urlInfo = this.getUrlUnderCursor(editor);
@@ -495,8 +525,6 @@ export default class OpenGraphPlugin extends Plugin {
         <div class="og-description">${description}</div>
         ${extraHtml}
         <div class="og-url"><a href="${safeUrl}">${safeUrl}</a></div>
-        <div class="og-user-text">${userText}</div>
-        <!--og-user-text-end-->
     </div>
     <!--og-card-end-->
 </div>`;
@@ -507,6 +535,68 @@ export default class OpenGraphPlugin extends Plugin {
             console.error(error);
             new Notice(t('loadingError', error.message));
         }
+    }
+
+    async updateCardUserText(editor: Editor, cardInfo: { url: string, userText: string, from: any, to: any }, newText: string) {
+        // Получаем текущий HTML карточки
+        const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
+
+        // Ищем позицию <!--og-card-end--> для вставки/обновления пользовательского текста
+        const cardEndMarker = '<!--og-card-end-->';
+        const cardEndIndex = cardHtml.indexOf(cardEndMarker);
+
+        if (cardEndIndex === -1) {
+            new Notice('Card end marker not found');
+            return;
+        }
+
+        let newCardHtml: string;
+
+        // Проверяем, есть ли уже og-user-text в карточке
+        const userTextRegex = /<div class="og-user-text">[\s\S]*?<\/div>(?:\s*)(?:<|\\x3C)!--og-user-text-end-->/i;
+        const existingUserTextMatch = cardHtml.match(userTextRegex);
+
+        if (newText.trim() === '') {
+            // Если текст пустой, удаляем блок og-user-text если он есть
+            if (existingUserTextMatch) {
+                newCardHtml = cardHtml.replace(userTextRegex, '');
+            } else {
+                return; // Нечего удалять
+            }
+        } else {
+            // Формируем новый блок с пользовательским текстом
+            const escapedText = this.escapeHTML(newText);
+            const userTextBlock = `<div class="og-user-text">${escapedText}</div>\n        <!--og-user-text-end-->`;
+
+            if (existingUserTextMatch) {
+                // Заменяем существующий блок
+                newCardHtml = cardHtml.replace(userTextRegex, userTextBlock);
+            } else {
+                // Вставляем новый блок перед <!--og-card-end-->
+                const beforeEnd = cardHtml.substring(0, cardEndIndex);
+                const afterEnd = cardHtml.substring(cardEndIndex);
+                newCardHtml = beforeEnd + '        ' + userTextBlock + '\n    ' + afterEnd;
+            }
+        }
+
+        editor.replaceRange(newCardHtml, cardInfo.from, cardInfo.to);
+    }
+
+    toggleCardOrientation(editor: Editor, cardInfo: { url: string, userText: string, from: any, to: any }, cardElement: HTMLElement) {
+        const isVertical = cardElement.classList.contains('og-card-vertical');
+        const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
+
+        let newCardHtml: string;
+
+        if (isVertical) {
+            // Удаляем класс og-card-vertical
+            newCardHtml = cardHtml.replace(/<div class="og-card og-card-vertical"/, '<div class="og-card"');
+        } else {
+            // Добавляем класс og-card-vertical
+            newCardHtml = cardHtml.replace(/<div class="og-card"/, '<div class="og-card og-card-vertical"');
+        }
+
+        editor.replaceRange(newCardHtml, cardInfo.from, cardInfo.to);
     }
 
     escapeHTML(str: string) {
@@ -550,11 +640,61 @@ class OpenGraphSettingTab extends PluginSettingTab {
         new Setting(containerEl)
             .setName(t('saveImagesName'))
             .setDesc(t('saveImagesDesc'))
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.saveImagesLocally)
-                .onChange(async (value) => {
-                    this.plugin.settings.saveImagesLocally = value;
-                    await this.plugin.saveSettings();
-                }));
+                .addToggle(toggle => toggle
+                    .setValue(this.plugin.settings.saveImagesLocally)
+                    .onChange(async (value) => {
+                        this.plugin.settings.saveImagesLocally = value;
+                        await this.plugin.saveSettings();
+                    }));
+    }
+}
+
+class CardDescriptionModal extends Modal {
+    private text: string;
+    private onSave: (text: string) => void;
+    private textarea: HTMLTextAreaElement;
+
+    constructor(app: App, currentText: string, onSave: (text: string) => void) {
+        super(app);
+        this.text = currentText;
+        this.onSave = onSave;
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+
+        contentEl.createEl('h2', { text: t('cardDescription') });
+
+        this.textarea = contentEl.createEl('textarea', {
+            attr: {
+                style: 'width: 100%; height: 200px; resize: vertical; margin-bottom: 1em;'
+            }
+        });
+        this.textarea.value = this.text;
+
+        const buttonContainer = contentEl.createDiv({
+            attr: {
+                style: 'display: flex; justify-content: flex-end; gap: 0.5em;'
+            }
+        });
+
+        const cancelButton = buttonContainer.createEl('button', { text: 'Cancel' });
+        cancelButton.addEventListener('click', () => {
+            this.close();
+        });
+
+        const saveButton = buttonContainer.createEl('button', { text: 'Save', attr: { class: 'mod-cta' } });
+        saveButton.addEventListener('click', () => {
+            this.onSave(this.textarea.value);
+            this.close();
+        });
+
+        // Фокус на textarea при открытии
+        this.textarea.focus();
+    }
+
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
     }
 }

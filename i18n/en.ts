@@ -18,5 +18,8 @@ export default {
     proxyName: 'Local Proxy',
     proxyDesc: 'Specify local proxy in format http://127.0.0.1:8080 or socks5://127.0.0.1:1080',
     saveImagesName: 'Save images to local vault',
-    saveImagesDesc: 'If enabled, images will be saved to the local Obsidian vault.'
+    saveImagesDesc: 'If enabled, images will be saved to the local Obsidian vault.',
+    cardDescription: 'Card description',
+    changeToHorizontal: 'Change to horizontal card',
+    changeToVertical: 'Change to vertical card'
 };
