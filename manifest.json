@@ -1,0 +1,10 @@
+{
+  "id": "obsidian-open-graph-card",
+  "name": "Open Graph Card",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Replaces link with an Open Graph card",
+  "author": "viruseg",
+  "authorUrl": "",
+  "isDesktopOnly": true
+}

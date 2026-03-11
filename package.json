@@ -1,0 +1,17 @@
+{
+  "description": "",
+  "devDependencies": {
+    "@types/node-fetch": "^2.6.13",
+    "esbuild": "^0.27.3",
+    "obsidian": "^1.12.3",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "build": "esbuild main.ts --bundle --platform=node --external:obsidian --external:electron --format=cjs --outfile=main.js"
+  },
+  "dependencies": {
+    "https-proxy-agent": "^7.0.6",
+    "node-fetch": "^2.7.0",
+    "socks-proxy-agent": "^8.0.5"
+  }
+}

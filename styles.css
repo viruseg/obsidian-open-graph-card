@@ -1,0 +1,150 @@
+.og-card
+{
+    display: flex;
+    flex-direction: row;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 1rem 0;
+    background-color: var(--background-secondary);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.og-image
+{
+    width: 200px;
+    object-fit: cover;
+    border-right: 1px solid var(--background-modifier-border);
+    margin: 0 !important;
+}
+
+/* Flex-родитель для контента */
+.og-content
+{
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 1rem;
+    flex: 1;
+    gap: 8px;
+    min-width: 0;
+}
+
+.og-title
+{
+    font-weight: 600;
+    font-size: 1.1em;
+    color: var(--text-normal);
+    line-height: 1.3;
+}
+
+.og-description
+{
+    font-size: 0.9em;
+    color: var(--text-muted);
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.og-tags
+{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.og-tag
+{
+    background-color: var(--background-modifier-border);
+    color: var(--text-normal);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    white-space: nowrap;
+}
+
+.og-screenshots
+{
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.og-screenshots::-webkit-scrollbar
+{
+    height: 4px;
+}
+
+.og-screenshots::-webkit-scrollbar-thumb
+{
+    background: var(--background-modifier-border);
+    border-radius: 4px;
+}
+
+.og-screenshot
+{
+    height: 70px !important;
+    width: auto !important;
+    border-radius: 4px;
+    object-fit: cover;
+    margin: 0 !important;
+}
+
+.og-url
+{
+    font-size: 0.85em;
+    color: var(--text-faint);
+    word-break: break-all;
+    margin-top: auto;
+}
+
+.og-url a
+{
+    color: var(--text-accent);
+    text-decoration: none;
+}
+
+.og-url a:hover
+{
+    text-decoration: underline;
+}
+
+.og-user-text
+{
+    margin-top: 4px;
+    border-top: 1px dashed var(--background-modifier-border);
+    padding-top: 8px;
+    font-size: 0.9em;
+    color: var(--text-normal);
+    min-height: 1.5em; /* Чтобы в пустой элемент можно было легко кликнуть */
+}
+
+/* Рейтинг Steam */
+.og-rating {
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+.steamdb_rating_poor { color: var(--color-red); }
+.steamdb_rating_white { color: var(--text-muted); }
+.steamdb_rating_good { color: var(--color-green); }
+.steamdb_rating_average { color: var(--color-orange); }
+
+.og-card-vertical
+{
+    flex-direction: column;
+    align-items: center;
+    max-width: 600px;
+}
+
+.og-card-vertical .og-image
+{
+    width: fit-content;
+    height: 300px;
+    border-right: none;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
