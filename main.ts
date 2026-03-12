@@ -81,7 +81,7 @@ export default class OpenGraphPlugin extends Plugin {
                             .setTitle(t('removeCard'))
                             .setIcon('trash')
                             .onClick(async () => {
-                                const replacement = cardInfo.url + (cardInfo.userText ? '\n\n' + cardInfo.userText : '');
+                                const replacement = cardInfo.url + (cardInfo.userText ? '\n' + cardInfo.userText : '');
                                 editor.replaceRange(replacement, cardInfo.from, cardInfo.to);
                             });
                     });
@@ -528,23 +528,10 @@ export default class OpenGraphPlugin extends Plugin {
             // Добавляем пользовательский текст если он есть
             let userTextHtml = '';
             if (userText && userText.trim() !== '') {
-                userTextHtml = `<div class="og-user-text">${this.escapeHTML(userText)}</div>
-    <!--og-user-text-end-->`;
+                userTextHtml = `<div class="og-user-text">${this.escapeHTML(userText)}</div><!--og-user-text-end-->`;
             }
 
-            const htmlBlock =
-                `<div class="og-card">
-    ${imageHtml}
-    <div class="og-content">
-        <div class="og-title">${title}</div>
-        ${ratingHtml}
-        <div class="og-description">${description}</div>
-        ${extraHtml}
-        <div class="og-url"><a href="${safeUrl}">${safeUrl}</a></div>
-        ${userTextHtml}
-    </div>
-    <!--og-card-end-->
-</div>`;
+            const htmlBlock = `<div class="og-card">${imageHtml}<div class="og-content"><div class="og-title">${title}</div>${ratingHtml}<div class="og-description">${description}</div>${extraHtml}<div class="og-url"><a href="${safeUrl}">${safeUrl}</a></div>${userTextHtml}</div><!--og-card-end--></div>`;
 
             editor.replaceRange(htmlBlock, urlInfo.from, urlInfo.to);
             // Устанавливаем курсор в начало карточки для предотвращения прыжков прокрутки
@@ -585,7 +572,7 @@ export default class OpenGraphPlugin extends Plugin {
         } else {
             // Формируем новый блок с пользовательским текстом
             const escapedText = this.escapeHTML(newText);
-            const userTextBlock = `<div class="og-user-text">${escapedText}</div>\n        <!--og-user-text-end-->`;
+            const userTextBlock = `<div class="og-user-text">${escapedText}</div><!--og-user-text-end-->`;
 
             if (existingUserTextMatch) {
                 // Заменяем существующий блок
@@ -599,11 +586,11 @@ export default class OpenGraphPlugin extends Plugin {
                 if (closingDivIndex !== -1) {
                     const beforeDiv = cardHtml.substring(0, closingDivIndex);
                     const fromDivToEnd = cardHtml.substring(closingDivIndex);
-                    newCardHtml = beforeDiv + '        ' + userTextBlock + '\n    ' + fromDivToEnd;
+                    newCardHtml = beforeDiv + userTextBlock + fromDivToEnd;
                 } else {
                     // Fallback: если </div> не найден, вставляем перед <!--og-card-end-->
                     const afterMarker = cardHtml.substring(cardEndIndex);
-                    newCardHtml = beforeMarker + '        ' + userTextBlock + '\n    ' + afterMarker;
+                    newCardHtml = beforeMarker + userTextBlock + afterMarker;
                 }
             }
         }
