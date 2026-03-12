@@ -418,6 +418,7 @@ export default class OpenGraphPlugin extends Plugin {
 
             let imageHtml = '';
             if (image) {
+                const originalImageUrl = image;
                 if (this.settings.saveImagesLocally) {
                     new Notice(t('downloadingCover'));
                     const imgFile = await this.downloadAndSaveImage(image, 'og-image', sourcePath, useProxy);
@@ -425,7 +426,8 @@ export default class OpenGraphPlugin extends Plugin {
                         image = encodeURI(imgFile.name);
                     }
                 }
-                imageHtml = `<img src="${this.escapeHTML(image)}" class="og-image" alt="${title}" />`;
+                const dataUrlAttr = this.settings.saveImagesLocally ? ` data-url="${this.escapeHTML(originalImageUrl)}"` : '';
+                imageHtml = `<img src="${this.escapeHTML(image)}" class="og-image" alt="${title}"${dataUrlAttr} />`;
             }
 
             let extraHtml = '';
@@ -481,7 +483,8 @@ export default class OpenGraphPlugin extends Plugin {
                     }
                 }
 
-                let finalScreenshots = screenshots;
+                // Создаём массив пар {originalUrl, localPath}
+                let screenshotData: {originalUrl: string, localPath: string | null}[] = screenshots.map(src => ({originalUrl: src, localPath: null}));
                 if (this.settings.saveImagesLocally && screenshots.length > 0) {
                     new Notice(t('downloadingScreenshots', screenshots.length.toString()));
                     const downloadPromises = screenshots.map((src, index) =>
@@ -489,13 +492,20 @@ export default class OpenGraphPlugin extends Plugin {
                     );
 
                     const files = await Promise.all(downloadPromises);
-                    finalScreenshots = files.filter(f => f !== null).map(f => encodeURI(f!.name));
+                    screenshotData = screenshots.map((src, i) => ({
+                        originalUrl: src,
+                        localPath: files[i] ? encodeURI(files[i]!.name) : null
+                    })).filter(d => d.localPath !== null || d.originalUrl);
                 }
 
                 let screenshotsHtml = '';
-                if (finalScreenshots.length > 0) {
+                if (screenshotData.length > 0) {
                     screenshotsHtml = `<div class="og-screenshots">` +
-                        finalScreenshots.map(src => `<img src="${this.escapeHTML(src)}" class="og-screenshot" />`).join('') +
+                        screenshotData.map(d => {
+                            const src = d.localPath || d.originalUrl;
+                            const dataUrlAttr = this.settings.saveImagesLocally && d.localPath ? ` data-url="${this.escapeHTML(d.originalUrl)}"` : '';
+                            return `<img src="${this.escapeHTML(src)}" class="og-screenshot"${dataUrlAttr} />`;
+                        }).join('') +
                         `</div>`;
                 }
 
