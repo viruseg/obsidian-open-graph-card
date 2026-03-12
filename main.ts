@@ -9,6 +9,18 @@ interface OpenGraphSettings {
     saveImagesLocally: boolean;
 }
 
+/**
+ * Результат классификации источников изображений карточки
+ */
+interface ImageSourceClassification {
+    /** Тип источников: local - только локальные, url - только URL, mixed - смешанные, empty - нет источников */
+    type: 'local' | 'url' | 'mixed' | 'empty';
+    /** Массив локальных путей к файлам */
+    localPaths: string[];
+    /** Массив URL-адресов */
+    urlPaths: string[];
+}
+
 const DEFAULT_SETTINGS: OpenGraphSettings = {
     proxy: '',
     saveImagesLocally: false
@@ -61,6 +73,11 @@ export default class OpenGraphPlugin extends Plugin {
                             .setTitle(t('updateCard'))
                             .setIcon('sync')
                             .onClick(async () => {
+                                // Получаем HTML карточки до обновления
+                                const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
+                                // Очищаем локальные изображения
+                                await this.cleanupCardImages(cardHtml);
+                                // Создаём новую карточку
                                 await this.replaceWithOpenGraph(editor, view, { url: cardInfo.url, from: cardInfo.from, to: cardInfo.to }, false, cardInfo.userText);
                             });
                     });
@@ -71,8 +88,13 @@ export default class OpenGraphPlugin extends Plugin {
                                 .setTitle(t('updateCardProxy'))
                                 .setIcon('sync')
                                 .onClick(async () => {
-                                    await this.replaceWithOpenGraph(editor, view, { url: cardInfo.url, from: cardInfo.from, to: cardInfo.to }, true, cardInfo.userText);
-                                });
+                                // Получаем HTML карточки до обновления
+                                const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
+                                // Очищаем локальные изображения
+                                await this.cleanupCardImages(cardHtml);
+                                // Создаём новую карточку
+                                await this.replaceWithOpenGraph(editor, view, { url: cardInfo.url, from: cardInfo.from, to: cardInfo.to }, true, cardInfo.userText);
+                            });
                         });
                     }
 
@@ -81,6 +103,11 @@ export default class OpenGraphPlugin extends Plugin {
                             .setTitle(t('removeCard'))
                             .setIcon('trash')
                             .onClick(async () => {
+                                // Получаем HTML карточки до удаления
+                                const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
+                                // Очищаем локальные изображения
+                                await this.cleanupCardImages(cardHtml);
+                                // Заменяем карточку на URL
                                 const replacement = cardInfo.url + (cardInfo.userText ? '\n' + cardInfo.userText : '');
                                 editor.replaceRange(replacement, cardInfo.from, cardInfo.to);
                             });
@@ -656,6 +683,102 @@ export default class OpenGraphPlugin extends Plugin {
                 '"': '&quot;'
             }[tag] || tag)
         );
+    }
+
+    /**
+     * Извлекает все значения атрибутов src из тегов <img> в HTML карточки
+     * @param html - HTML-код карточки
+     * @returns массив путей/URL из атрибутов src
+     */
+    getImageSourcesFromCard(html: string): string[] {
+        const sources: string[] = [];
+        // Ищем все img теги с классом og-image или og-screenshot (порядок атрибутов может быть любым)
+        const imgRegex = /<img[^>]*class="og-(?:image|screenshot)"[^>]*>/gi;
+        const srcRegex = /src="([^"]+)"/i;
+
+        let imgMatch;
+        while ((imgMatch = imgRegex.exec(html)) !== null) {
+            const srcMatch = srcRegex.exec(imgMatch[0]);
+            if (srcMatch) {
+                sources.push(srcMatch[1]);
+            }
+        }
+        return sources;
+    }
+
+    /**
+     * Фильтрует источники, возвращая только локальные пути (не URL)
+     * @param sources - массив всех источников изображений
+     * @returns массив только локальных путей
+     */
+    filterLocalPaths(sources: string[]): string[] {
+        const urlPattern = /^https?:\/\//i;
+        return sources.filter(source => !urlPattern.test(source));
+    }
+
+    /**
+     * Классифицирует источники изображений по типу (локальные пути или URL)
+     * @param sources - массив всех источников изображений
+     * @returns объект классификации с типом и разделёнными путями
+     */
+    classifyImageSources(sources: string[]): ImageSourceClassification {
+        const urlPattern = /^https?:\/\//i;
+        const localPaths: string[] = [];
+        const urlPaths: string[] = [];
+
+        for (const source of sources) {
+            if (urlPattern.test(source)) {
+                urlPaths.push(source);
+            } else {
+                localPaths.push(source);
+            }
+        }
+
+        // Определяем тип источников
+        let type: 'local' | 'url' | 'mixed' | 'empty';
+        if (localPaths.length === 0 && urlPaths.length === 0) {
+            type = 'empty';
+        } else if (localPaths.length > 0 && urlPaths.length > 0) {
+            type = 'mixed';
+        } else if (localPaths.length > 0) {
+            type = 'local';
+        } else {
+            type = 'url';
+        }
+
+        return { type, localPaths, urlPaths };
+    }
+
+    /**
+     * Удаляет локальные файлы изображений из хранилища
+     * @param paths - массив локальных путей к файлам
+     */
+    async deleteLocalImages(paths: string[]): Promise<void> {
+        for (const path of paths) {
+            try {
+                const file = this.app.vault.getAbstractFileByPath(path);
+                if (file instanceof TFile) {
+                    await this.app.vault.delete(file);
+                }
+            } catch (error) {
+                console.error(`Failed to delete image: ${path}`, error);
+            }
+        }
+    }
+
+    /**
+     * Координирующий метод для очистки локальных изображений карточки
+     * @param cardHtml - HTML-код карточки
+     * Удаляет локальные изображения, URL игнорируются
+     */
+    async cleanupCardImages(cardHtml: string): Promise<void> {
+        const sources = this.getImageSourcesFromCard(cardHtml);
+        const classification = this.classifyImageSources(sources);
+
+        // Удаляем локальные пути (URL игнорируются)
+        if (classification.localPaths.length > 0) {
+            await this.deleteLocalImages(classification.localPaths);
+        }
     }
 }
 
