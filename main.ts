@@ -220,11 +220,18 @@ export default class OpenGraphPlugin extends Plugin {
         const baseLine = targetLine !== undefined ? targetLine : editor.getCursor().line;
 
         let startLine = -1;
+        let cardId: string | null = null;
 
         // 1. Ищем начало карточки поднимаясь вверх по строкам
         for (let i = baseLine; i >= Math.max(0, baseLine - 100); i--) {
-            if (editor.getLine(i).includes('<div class="og-card')) {
+            const lineText = editor.getLine(i);
+            if (lineText.includes('<div class="og-card')) {
                 startLine = i;
+                // Пытаемся извлечь card-id из начала карточки
+                const cardIdMatch = lineText.match(/<div class="og-card[^"]*"\s+card-id="(\d+)"/);
+                if (cardIdMatch) {
+                    cardId = cardIdMatch[1];
+                }
                 break;
             }
         }
@@ -232,8 +239,14 @@ export default class OpenGraphPlugin extends Plugin {
         // 2. Ищем вниз (на случай, если posAtDOM указал чуть выше из-за пустых строк перед блоком)
         if (startLine === -1) {
             for (let i = baseLine + 1; i <= Math.min(editor.lineCount() - 1, baseLine + 10); i++) {
-                if (editor.getLine(i).includes('<div class="og-card')) {
+                const lineText = editor.getLine(i);
+                if (lineText.includes('<div class="og-card')) {
                     startLine = i;
+                    // Пытаемся извлечь card-id из начала карточки
+                    const cardIdMatch = lineText.match(/<div class="og-card[^"]*"\s+card-id="(\d+)"/);
+                    if (cardIdMatch) {
+                        cardId = cardIdMatch[1];
+                    }
                     break;
                 }
             }
@@ -249,8 +262,8 @@ export default class OpenGraphPlugin extends Plugin {
         }
         const htmlStr = lines.join('\n');
 
-        // Ищем конец карточки: <!--og-card-end--> (или \x3C!--og-card-end-->) + любые пробельные символы + </div>
-        const endRegex = /(?:<|\\x3C)!--og-card-end-->(?:\s*)<\/div>/i;
+        // Ищем конец карточки с учётом card-id
+        let endRegex = new RegExp(`(?:<|\\\\x3C)!--og-card-end ${cardId}-->(?:\\s*)<\\/div>`, 'i');
         const endMatch = htmlStr.match(endRegex);
 
         if (!endMatch) return null;
@@ -531,7 +544,10 @@ export default class OpenGraphPlugin extends Plugin {
                 userTextHtml = `<div class="og-user-text">${this.escapeHTML(userText)}</div><!--og-user-text-end-->`;
             }
 
-            const htmlBlock = `<div class="og-card">${imageHtml}<div class="og-content"><div class="og-title">${title}</div>${ratingHtml}<div class="og-description">${description}</div>${extraHtml}<div class="og-url"><a href="${safeUrl}">${safeUrl}</a></div>${userTextHtml}</div><!--og-card-end--></div>`;
+            // Генерируем уникальный идентификатор карточки на основе timestamp
+            const cardId = Date.now();
+
+            const htmlBlock = `<div class="og-card" card-id="${cardId}">${imageHtml}<div class="og-content"><div class="og-title">${title}</div>${ratingHtml}<div class="og-description">${description}</div>${extraHtml}<div class="og-url"><a href="${safeUrl}">${safeUrl}</a></div>${userTextHtml}</div><!--og-card-end ${cardId}--></div>`;
 
             editor.replaceRange(htmlBlock, urlInfo.from, urlInfo.to);
             // Устанавливаем курсор в начало карточки для предотвращения прыжков прокрутки
@@ -547,9 +563,20 @@ export default class OpenGraphPlugin extends Plugin {
         // Получаем текущий HTML карточки
         const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
 
-        // Ищем позицию <!--og-card-end--> для вставки/обновления пользовательского текста
-        const cardEndMarker = '<!--og-card-end-->';
-        const cardEndIndex = cardHtml.indexOf(cardEndMarker);
+        // Пытаемся извлечь card-id из карточки
+        const cardIdMatch = cardHtml.match(/<div class="og-card[^"]*"\s+card-id="(\d+)"/);
+        const cardId = cardIdMatch ? cardIdMatch[1] : null;
+
+        // Ищем позицию <!--og-card-end--> (с card-id или без) для вставки/обновления пользовательского текста
+        let cardEndMarker: string;
+        let cardEndIndex: number;
+
+        if (cardId) {
+            cardEndMarker = `<!--og-card-end ${cardId}-->`;
+            cardEndIndex = cardHtml.indexOf(cardEndMarker);
+        } else {
+            cardEndIndex = -1;
+        }
 
         if (cardEndIndex === -1) {
             new Notice(t('cardEndMarkerNotFound'));
@@ -611,7 +638,7 @@ export default class OpenGraphPlugin extends Plugin {
             newCardHtml = cardHtml.replace(/<div class="og-card og-card-vertical"/, '<div class="og-card"');
         } else {
             // Добавляем класс og-card-vertical
-            newCardHtml = cardHtml.replace(/<div class="og-card"/, '<div class="og-card og-card-vertical"');
+            newCardHtml = cardHtml.replace(/<div class="og-card"(?=\s+card-id=")/, '<div class="og-card og-card-vertical"');
         }
 
         editor.replaceRange(newCardHtml, cardInfo.from, cardInfo.to);
