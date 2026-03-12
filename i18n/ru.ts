@@ -22,5 +22,7 @@ export default {
     cardDescription: 'Описание карточки',
     changeToHorizontal: 'Изменить на горизонтальную карточку',
     changeToVertical: 'Изменить на вертикальную карточку',
-    cardEndMarkerNotFound: 'Маркер конца карточки не найден'
+    cardEndMarkerNotFound: 'Маркер конца карточки не найден',
+    cancel: 'Отмена',
+    save: 'Сохранить'
 };

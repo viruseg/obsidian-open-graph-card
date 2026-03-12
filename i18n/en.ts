@@ -22,5 +22,7 @@ export default {
     cardDescription: 'Card description',
     changeToHorizontal: 'Change to horizontal card',
     changeToVertical: 'Change to vertical card',
-    cardEndMarkerNotFound: 'Card end marker not found'
+    cardEndMarkerNotFound: 'Card end marker not found',
+    cancel: 'Cancel',
+    save: 'Save'
 };

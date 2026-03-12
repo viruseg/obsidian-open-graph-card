@@ -683,14 +683,14 @@ class CardDescriptionModal extends Modal {
             }
         });
 
-        const cancelButton = buttonContainer.createEl('button', { text: 'Cancel' });
-        cancelButton.addEventListener('click', () => {
+        const saveButton = buttonContainer.createEl('button', { text: t('save'), attr: { class: 'mod-cta' } });
+        saveButton.addEventListener('click', () => {
+            this.onSave(this.textarea.value);
             this.close();
         });
 
-        const saveButton = buttonContainer.createEl('button', { text: 'Save', attr: { class: 'mod-cta' } });
-        saveButton.addEventListener('click', () => {
-            this.onSave(this.textarea.value);
+        const cancelButton = buttonContainer.createEl('button', { text: t('cancel') });
+        cancelButton.addEventListener('click', () => {
             this.close();
         });
 
