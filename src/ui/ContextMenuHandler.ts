@@ -1,0 +1,218 @@
+import { EventRef, Menu, Editor, MarkdownView, Notice } from 'obsidian';
+import { PluginContext } from '../core/PluginContext';
+import { getUrlUnderCursor } from '../utils/editor';
+import { t } from '../../i18n';
+import { CardDescriptionModal } from './modals/CardDescriptionModal';
+
+export interface CardInfo {
+    url: string;
+    userText: string;
+    from: any;
+    to: any;
+}
+
+export interface UrlInfo {
+    url: string;
+    from: any;
+    to: any;
+}
+
+export interface ContextMenuHandlerCallbacks {
+    getCardUnderCursor: (editor: Editor, targetLine?: number) => CardInfo | null;
+    replaceWithOpenGraph: (editor: Editor, view: MarkdownView, urlInfo: UrlInfo, useProxy: boolean, userText?: string) => Promise<void>;
+    updateCardUserText: (editor: Editor, cardInfo: CardInfo, newText: string) => Promise<void>;
+    toggleCardOrientation: (editor: Editor, cardInfo: CardInfo) => void;
+}
+
+export class ContextMenuHandler {
+    private lastContextEventTarget: HTMLElement | null = null;
+
+    constructor(
+        private context: PluginContext,
+        private callbacks: ContextMenuHandlerCallbacks
+    ) {}
+
+    setLastContextEventTarget(target: HTMLElement | null): void {
+        this.lastContextEventTarget = target;
+    }
+
+    createHandler(): EventRef {
+        return this.context.app.workspace.on('editor-menu', (menu: Menu, editor: Editor, view: MarkdownView) => {
+            if (!editor) return;
+
+            let targetLine: number | undefined = undefined;
+
+            // Если мы кликнули по отрендеренной HTML-карточке, пытаемся найти её настоящую строку в редакторе (Live Preview)
+            if (this.lastContextEventTarget) {
+                const cardElement = this.lastContextEventTarget.closest('.og-card');
+                if (cardElement) {
+                    try {
+                        const cm = (editor as any).cm;
+                        if (cm && typeof cm.posAtDOM === 'function') {
+                            const pos = cm.posAtDOM(cardElement);
+                            if (pos !== null && pos !== undefined) {
+                                targetLine = editor.offsetToPos(pos).line;
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Error when extracting a position from the DOM', e);
+                    }
+                }
+            }
+
+            const cardInfo = this.callbacks.getCardUnderCursor(editor, targetLine);
+
+            if (cardInfo) {
+                this.addCardMenuItems(menu, editor, view, cardInfo);
+            } else {
+                this.addUrlMenuItems(menu, editor, view);
+            }
+        });
+    }
+
+    private addCardMenuItems(menu: Menu, editor: Editor, view: MarkdownView, cardInfo: CardInfo): void {
+        // --- Пункт меню "Обновить карточку" ---
+        menu.addItem((item) => {
+            item
+                .setTitle(t('updateCard'))
+                .setIcon('sync')
+                .onClick(async () => {
+                    // Получаем HTML карточки до обновления
+                    const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
+                    // Очищаем локальные изображения
+                    await this.context.imageService.cleanupCardImages(cardHtml);
+                    // Создаём новую карточку
+                    await this.callbacks.replaceWithOpenGraph(editor, view, { url: cardInfo.url, from: cardInfo.from, to: cardInfo.to }, false, cardInfo.userText);
+                });
+        });
+
+        // --- Пункт меню "Обновить через прокси" ---
+        if (this.context.fetchService.isProxyConfigured()) {
+            menu.addItem((item) => {
+                item
+                    .setTitle(t('updateCardProxy'))
+                    .setIcon('sync')
+                    .onClick(async () => {
+                        // Получаем HTML карточки до обновления
+                        const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
+                        // Очищаем локальные изображения
+                        await this.context.imageService.cleanupCardImages(cardHtml);
+                        // Создаём новую карточку
+                        await this.callbacks.replaceWithOpenGraph(editor, view, { url: cardInfo.url, from: cardInfo.from, to: cardInfo.to }, true, cardInfo.userText);
+                    });
+            });
+        }
+
+        // --- Пункт меню "Удалить карточку" ---
+        menu.addItem((item) => {
+            item
+                .setTitle(t('removeCard'))
+                .setIcon('trash')
+                .onClick(async () => {
+                    // Получаем HTML карточки до удаления
+                    const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
+                    // Очищаем локальные изображения
+                    await this.context.imageService.cleanupCardImages(cardHtml);
+                    // Заменяем карточку на URL
+                    const replacement = cardInfo.url + (cardInfo.userText ? '\n' + cardInfo.userText : '');
+                    editor.replaceRange(replacement, cardInfo.from, cardInfo.to);
+                });
+        });
+
+        // --- Пункт меню "Описание карточки" ---
+        menu.addItem((item) => {
+            item
+                .setTitle(t('cardDescription'))
+                .setIcon('text')
+                .onClick(() => {
+                    new CardDescriptionModal(
+                        this.context.app,
+                        cardInfo.userText,
+                        async (newText) => {
+                            await this.callbacks.updateCardUserText(editor, cardInfo, newText);
+                        }
+                    ).open();
+                });
+        });
+
+        // --- Пункт меню переключения ориентации ---
+        // Проверяем ориентацию через HTML-код карточки (работает и в Live Preview, и при редактировании HTML)
+        const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
+        const isVertical = cardHtml.includes('og-card-vertical');
+        menu.addItem((item) => {
+            item
+                .setTitle(isVertical ? t('changeToHorizontal') : t('changeToVertical'))
+                .setIcon(isVertical ? 'arrow-right' : 'arrow-down')
+                .onClick(() => {
+                    this.callbacks.toggleCardOrientation(editor, cardInfo);
+                });
+        });
+    }
+
+    private addUrlMenuItems(menu: Menu, editor: Editor, view: MarkdownView): void {
+        const urlInfo = getUrlUnderCursor(editor);
+
+        if (urlInfo) {
+            menu.addItem((item) => {
+                item
+                    .setTitle(t('loadCard'))
+                    .setIcon('link')
+                    .onClick(async () => {
+                        await this.callbacks.replaceWithOpenGraph(editor, view, urlInfo, false);
+                    });
+            });
+
+            if (this.context.fetchService.isProxyConfigured()) {
+                menu.addItem((item) => {
+                    item
+                        .setTitle(t('loadCardProxy'))
+                        .setIcon('globe')
+                        .onClick(async () => {
+                            await this.callbacks.replaceWithOpenGraph(editor, view, urlInfo, true);
+                        });
+                });
+            }
+        }
+
+        // --- Логика для ссылки в буфере обмена ---
+        this.addClipboardMenuItems(menu, editor, view);
+    }
+
+    private addClipboardMenuItems(menu: Menu, editor: Editor, view: MarkdownView): void {
+        try {
+            // @ts-ignore
+            const clipboardText = require('electron').clipboard.readText().trim();
+            const isUrl = /^https?:\/\/[^\s>)]+$/i.test(clipboardText);
+
+            if (isUrl) {
+                menu.addSeparator();
+
+                menu.addItem((item) => {
+                    item
+                        .setTitle(t('pasteCard'))
+                        .setIcon('paste')
+                        .onClick(async () => {
+                            const from = editor.getCursor('from');
+                            const to = editor.getCursor('to');
+                            await this.callbacks.replaceWithOpenGraph(editor, view, { url: clipboardText, from, to }, false);
+                        });
+                });
+
+                if (this.context.fetchService.isProxyConfigured()) {
+                    menu.addItem((item) => {
+                        item
+                            .setTitle(t('pasteCardProxy'))
+                            .setIcon('globe')
+                            .onClick(async () => {
+                                const from = editor.getCursor('from');
+                                const to = editor.getCursor('to');
+                                await this.callbacks.replaceWithOpenGraph(editor, view, { url: clipboardText, from, to }, true);
+                            });
+                    });
+                }
+            }
+        } catch (e) {
+            console.error('Clipboard access error', e);
+        }
+    }
+}

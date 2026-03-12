@@ -1,211 +1,41 @@
-import { Plugin, Editor, MarkdownView, Menu, requestUrl, Notice, PluginSettingTab, App, Setting, TFile, Modal } from 'obsidian';
-import fetch from 'node-fetch';
-import { HttpsProxyAgent } from 'https-proxy-agent';
-import { SocksProxyAgent } from 'socks-proxy-agent';
+import { Plugin, Editor, MarkdownView, Notice, TFile } from 'obsidian';
 import { t } from "./i18n";
-
-interface OpenGraphSettings {
-    proxy: string;
-    saveImagesLocally: boolean;
-}
-
-/**
- * Результат классификации источников изображений карточки
- */
-interface ImageSourceClassification {
-    /** Тип источников: local - только локальные, url - только URL, mixed - смешанные, empty - нет источников */
-    type: 'local' | 'url' | 'mixed' | 'empty';
-    /** Массив локальных путей к файлам */
-    localPaths: string[];
-    /** Массив URL-адресов */
-    urlPaths: string[];
-}
-
-const DEFAULT_SETTINGS: OpenGraphSettings = {
-    proxy: '',
-    saveImagesLocally: false
-}
+import { OpenGraphSettings, DEFAULT_SETTINGS } from './src/types';
+import { PluginContext } from './src/core/PluginContext';
+import { parserRegistry } from './src/parsers';
+import { CardData, ScreenshotData } from './src/types';
+import { ContextMenuHandler, CardInfo, UrlInfo } from './src/ui';
+import { SettingsTab } from './src/ui';
+import { HtmlBuilder, ImageData } from './src/builders';
 
 export default class OpenGraphPlugin extends Plugin {
     settings: OpenGraphSettings;
-    lastContextEventTarget: HTMLElement | null = null;
+    private context!: PluginContext;
+    private contextMenuHandler!: ContextMenuHandler;
 
     async onload() {
         await this.loadSettings();
 
-        this.addSettingTab(new OpenGraphSettingTab(this.app, this));
+        // Инициализация контекста с сервисами
+        this.context = new PluginContext(this.app, () => this.settings);
+
+        // Инициализация обработчика контекстного меню
+        this.contextMenuHandler = new ContextMenuHandler(this.context, {
+            getCardUnderCursor: this.getCardUnderCursor.bind(this),
+            replaceWithOpenGraph: this.replaceWithOpenGraph.bind(this),
+            updateCardUserText: this.updateCardUserText.bind(this),
+            toggleCardOrientation: this.toggleCardOrientation.bind(this)
+        });
+
+        this.addSettingTab(new SettingsTab(this.app, this, this.settings, this.saveSettings.bind(this)));
 
         // Отслеживаем глобальный клик ПКМ, чтобы поймать целевой DOM элемент ДО рендера контекстного меню
         this.registerDomEvent(document, 'contextmenu', (e: MouseEvent) => {
-            this.lastContextEventTarget = e.target as HTMLElement;
+            this.contextMenuHandler.setLastContextEventTarget(e.target as HTMLElement);
         }, { capture: true });
 
-        this.registerEvent(
-            this.app.workspace.on('editor-menu', (menu: Menu, editor: Editor, view: MarkdownView) => {
-                if (!editor) return;
-
-                let targetLine: number | undefined = undefined;
-
-                // Если мы кликнули по отрендеренной HTML-карточке, пытаемся найти её настоящую строку в редакторе (Live Preview)
-                if (this.lastContextEventTarget) {
-                    const cardElement = this.lastContextEventTarget.closest('.og-card');
-                    if (cardElement) {
-                        try {
-                            const cm = (editor as any).cm;
-                            if (cm && typeof cm.posAtDOM === 'function') {
-                                const pos = cm.posAtDOM(cardElement);
-                                if (pos !== null && pos !== undefined) {
-                                    targetLine = editor.offsetToPos(pos).line;
-                                }
-                            }
-                        } catch (e) {
-                            console.error('Error when extracting a position from the DOM', e);
-                        }
-                    }
-                }
-
-                const cardInfo = this.getCardUnderCursor(editor, targetLine);
-
-                if (cardInfo) {
-                    // --- Логика для существующей карточки под курсором ---
-                    menu.addItem((item) => {
-                        item
-                            .setTitle(t('updateCard'))
-                            .setIcon('sync')
-                            .onClick(async () => {
-                                // Получаем HTML карточки до обновления
-                                const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
-                                // Очищаем локальные изображения
-                                await this.cleanupCardImages(cardHtml);
-                                // Создаём новую карточку
-                                await this.replaceWithOpenGraph(editor, view, { url: cardInfo.url, from: cardInfo.from, to: cardInfo.to }, false, cardInfo.userText);
-                            });
-                    });
-
-                    if (this.settings.proxy && this.settings.proxy.trim() !== '') {
-                        menu.addItem((item) => {
-                            item
-                                .setTitle(t('updateCardProxy'))
-                                .setIcon('sync')
-                                .onClick(async () => {
-                                // Получаем HTML карточки до обновления
-                                const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
-                                // Очищаем локальные изображения
-                                await this.cleanupCardImages(cardHtml);
-                                // Создаём новую карточку
-                                await this.replaceWithOpenGraph(editor, view, { url: cardInfo.url, from: cardInfo.from, to: cardInfo.to }, true, cardInfo.userText);
-                            });
-                        });
-                    }
-
-                    menu.addItem((item) => {
-                        item
-                            .setTitle(t('removeCard'))
-                            .setIcon('trash')
-                            .onClick(async () => {
-                                // Получаем HTML карточки до удаления
-                                const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
-                                // Очищаем локальные изображения
-                                await this.cleanupCardImages(cardHtml);
-                                // Заменяем карточку на URL
-                                const replacement = cardInfo.url + (cardInfo.userText ? '\n' + cardInfo.userText : '');
-                                editor.replaceRange(replacement, cardInfo.from, cardInfo.to);
-                            });
-                    });
-
-                    // --- Пункт меню "Описание карточки" ---
-                    menu.addItem((item) => {
-                        item
-                            .setTitle(t('cardDescription'))
-                            .setIcon('text')
-                            .onClick(() => {
-                                new CardDescriptionModal(
-                                    this.app,
-                                    cardInfo.userText,
-                                    async (newText) => {
-                                        await this.updateCardUserText(editor, cardInfo, newText);
-                                    }
-                                ).open();
-                            });
-                    });
-
-                    // --- Пункт меню переключения ориентации ---
-                    // Проверяем ориентацию через HTML-код карточки (работает и в Live Preview, и при редактировании HTML)
-                    const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
-                    const isVertical = cardHtml.includes('og-card-vertical');
-                    menu.addItem((item) => {
-                        item
-                            .setTitle(isVertical ? t('changeToHorizontal') : t('changeToVertical'))
-                            .setIcon(isVertical ? 'arrow-right' : 'arrow-down')
-                            .onClick(() => {
-                                this.toggleCardOrientation(editor, cardInfo);
-                            });
-                    });
-
-                } else {
-                    const urlInfo = this.getUrlUnderCursor(editor);
-
-                    if (urlInfo) {
-                        menu.addItem((item) => {
-                            item
-                                .setTitle(t('loadCard'))
-                                .setIcon('link')
-                                .onClick(async () => {
-                                    await this.replaceWithOpenGraph(editor, view, urlInfo, false);
-                                });
-                        });
-
-                        if (this.settings.proxy && this.settings.proxy.trim() !== '') {
-                            menu.addItem((item) => {
-                                item
-                                    .setTitle(t('loadCardProxy'))
-                                    .setIcon('globe')
-                                    .onClick(async () => {
-                                        await this.replaceWithOpenGraph(editor, view, urlInfo, true);
-                                    });
-                            });
-                        }
-                    }
-
-                    // --- Логика для ссылки в буфере обмена ---
-                    try {
-                        // @ts-ignore
-                        const clipboardText = require('electron').clipboard.readText().trim();
-                        const isUrl = /^https?:\/\/[^\s>)]+$/i.test(clipboardText);
-
-                        if (isUrl) {
-                            menu.addSeparator();
-
-                            menu.addItem((item) => {
-                                item
-                                    .setTitle(t('pasteCard'))
-                                    .setIcon('paste')
-                                    .onClick(async () => {
-                                        const from = editor.getCursor('from');
-                                        const to = editor.getCursor('to');
-                                        await this.replaceWithOpenGraph(editor, view, { url: clipboardText, from, to }, false);
-                                    });
-                            });
-
-                            if (this.settings.proxy && this.settings.proxy.trim() !== '') {
-                                menu.addItem((item) => {
-                                    item
-                                        .setTitle(t('pasteCardProxy'))
-                                        .setIcon('globe')
-                                        .onClick(async () => {
-                                            const from = editor.getCursor('from');
-                                            const to = editor.getCursor('to');
-                                            await this.replaceWithOpenGraph(editor, view, { url: clipboardText, from, to }, true);
-                                        });
-                                });
-                            }
-                        }
-                    } catch (e) {
-                        console.error('Clipboard access error', e);
-                    }
-                }
-            })
-        );
+        // Регистрируем обработчик контекстного меню
+        this.registerEvent(this.contextMenuHandler.createHandler());
     }
 
     async loadSettings() {
@@ -216,33 +46,7 @@ export default class OpenGraphPlugin extends Plugin {
         await this.saveData(this.settings);
     }
 
-    getUrlUnderCursor(editor: Editor): { url: string, from: any, to: any } | null {
-        const cursor = editor.getCursor();
-        const lineText = editor.getLine(cursor.line);
-
-        const mdLinkRegex = /\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g;
-        let match;
-        while ((match = mdLinkRegex.exec(lineText)) !== null) {
-            const start = match.index;
-            const end = start + match[0].length;
-            if (cursor.ch >= start && cursor.ch <= end) {
-                return { url: match[2], from: { line: cursor.line, ch: start }, to: { line: cursor.line, ch: end } };
-            }
-        }
-
-        const urlRegex = /(https?:\/\/[^\s>)]+)/g;
-        while ((match = urlRegex.exec(lineText)) !== null) {
-            const start = match.index;
-            const end = start + match[0].length;
-            if (cursor.ch >= start && cursor.ch <= end) {
-                return { url: match[1], from: { line: cursor.line, ch: start }, to: { line: cursor.line, ch: end } };
-            }
-        }
-
-        return null;
-    }
-
-    getCardUnderCursor(editor: Editor, targetLine?: number): { url: string, userText: string, from: any, to: any } | null {
+    getCardUnderCursor(editor: Editor, targetLine?: number): CardInfo | null {
         // Если targetLine пришел из события мыши по DOM, используем его, иначе берём курсор
         const baseLine = targetLine !== undefined ? targetLine : editor.getCursor().line;
 
@@ -336,128 +140,45 @@ export default class OpenGraphPlugin extends Plugin {
     }
 
     async downloadAndSaveImage(url: string, baseFilename: string, sourcePath: string, useProxy: boolean): Promise<TFile | null> {
-        try {
-            let buffer: ArrayBuffer;
-            const headers: Record<string, string> = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            };
-
-            if (useProxy && this.settings.proxy) {
-                const proxyUrl = this.settings.proxy.trim();
-                let agent;
-                if (proxyUrl.startsWith('socks')) {
-                    agent = new SocksProxyAgent(proxyUrl);
-                } else if (proxyUrl.startsWith('http')) {
-                    agent = new HttpsProxyAgent(proxyUrl);
-                }
-                const response = await fetch(url, { agent, headers, follow: 5 });
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-                const buf = await response.buffer();
-                buffer = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-            } else {
-                const response = await requestUrl({ url, headers });
-                buffer = response.arrayBuffer;
-            }
-
-            let ext = 'jpg';
-            try {
-                const pathname = new URL(url).pathname;
-                const match = pathname.match(/\.([a-zA-Z0-9]+)$/);
-                if (match) ext = match[1];
-            } catch (e) {}
-
-            const filename = `${baseFilename}-${Date.now()}.${ext}`;
-            const attachmentPath = await this.app.fileManager.getAvailablePathForAttachment(filename, sourcePath);
-
-            return await this.app.vault.createBinary(attachmentPath, buffer);
-        } catch (error) {
-            console.error('Error downloading image', error);
-            return null;
-        }
+        return await this.context.imageService.downloadAndSave(url, baseFilename, sourcePath, useProxy);
     }
 
-    async replaceWithOpenGraph(editor: Editor, view: MarkdownView, urlInfo: { url: string, from: any, to: any }, useProxy: boolean, userText: string = '') {
+    async replaceWithOpenGraph(editor: Editor, view: MarkdownView, urlInfo: UrlInfo, useProxy: boolean, userText: string = '') {
         new Notice(useProxy ? t('loadingProxy') : t('loading'));
 
         try {
-            let isSteam = false;
-            try {
-                const parsedUrl = new URL(urlInfo.url);
-                if (parsedUrl.hostname === 'store.steampowered.com') {
-                    isSteam = true;
-                }
-            } catch (e) {
-                console.error('Invalid URL', e);
-            }
+            // Получаем подходящий парсер для URL
+            const ogParser = parserRegistry.getParser(urlInfo.url);
 
-            const headers: Record<string, string> = {
-                'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36'
-            };
-
-            if (isSteam) {
-                headers['Cookie'] = 'wants_mature_content=1;path=/';
-            }
+            // Получаем заголовки от парсера
+            const headers = ogParser.getHeaders();
 
             let html = '';
-
-            if (useProxy && this.settings.proxy) {
-                const proxyUrl = this.settings.proxy.trim();
-                let agent;
-
-                if (proxyUrl.startsWith('socks')) {
-                    agent = new SocksProxyAgent(proxyUrl);
-                } else if (proxyUrl.startsWith('http')) {
-                    agent = new HttpsProxyAgent(proxyUrl);
-                } else {
+            try {
+                html = await this.context.fetchService.fetchHtml(urlInfo.url, useProxy, headers);
+            } catch (error) {
+                if (useProxy) {
                     new Notice(t('proxyError'));
                     return;
                 }
-
-                const response = await fetch(urlInfo.url, {
-                    headers,
-                    agent,
-                    follow: 5
-                });
-
-                if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-                html = await response.text();
-            } else {
-                const response = await requestUrl({ url: urlInfo.url, headers });
-                html = response.text;
+                throw error;
             }
 
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, 'text/html');
+            const domParser = new DOMParser();
+            const doc = domParser.parseFromString(html, 'text/html');
 
-            let title =
-                isSteam && doc.getElementById('appHubAppName')?.textContent ||
-                doc.querySelector('meta[property="og:title"]')?.getAttribute('content') ||
-                doc.title ||
-                t('untitled');
+            // Используем парсер для извлечения данных
+            const cardData = await ogParser.parse(doc, urlInfo.url);
 
-            let description =
-                doc.querySelector('meta[property="og:description"]')?.getAttribute('content') ||
-                doc.querySelector('meta[name="description"]')?.getAttribute('content') ||
-                '';
-
-            let image =
-                doc.querySelector('meta[property="og:image"]')?.getAttribute('content') ||
-                '';
-
-            if (image && !image.startsWith('http')) {
-                try { image = new URL(image, urlInfo.url).href; } catch (e) {}
-            }
-
-            title = this.escapeHTML(title);
-            description = this.escapeHTML(description);
-            const safeUrl = this.escapeHTML(urlInfo.url);
+            // Добавляем пользовательский текст
+            cardData.userText = userText;
 
             const sourcePath = view?.file?.path || '';
 
-            let imageHtml = '';
-            if (image) {
+            // Обработка изображения
+            let imageData: ImageData | undefined;
+            if (cardData.image) {
+                let image = cardData.image;
                 const originalImageUrl = image;
                 if (this.settings.saveImagesLocally) {
                     new Notice(t('downloadingCover'));
@@ -466,115 +187,36 @@ export default class OpenGraphPlugin extends Plugin {
                         image = encodeURI(imgFile.path);
                     }
                 }
-                const dataUrlAttr = this.settings.saveImagesLocally ? ` data-url="${this.escapeHTML(originalImageUrl)}"` : '';
-                imageHtml = `<img src="${this.escapeHTML(image)}" class="og-image" alt="${title}"${dataUrlAttr} />`;
+                imageData = {
+                    src: image,
+                    originalUrl: originalImageUrl,
+                    showDataUrl: this.settings.saveImagesLocally
+                };
             }
 
-            let extraHtml = '';
-            let ratingHtml = '';
+            // Обработка скриншотов (Steam)
+            let screenshotData: ScreenshotData[] | undefined;
+            if (cardData.screenshots && cardData.screenshots.length > 0) {
+                screenshotData = cardData.screenshots;
 
-            if (isSteam) {
-                const positiveVoteText = doc.querySelector('label[for="review_type_positive"] .user_reviews_count');
-                const negativeVoteText = doc.querySelector('label[for="review_type_negative"] .user_reviews_count');
-
-                if (positiveVoteText && negativeVoteText) {
-                    const posVotesText = positiveVoteText.textContent?.replace(/[(.,\s)]/g, '') || '0';
-                    const negVotesText = negativeVoteText.textContent?.replace(/[(.,\s)]/g, '') || '0';
-
-                    const positiveVotes = Number.parseInt(posVotesText, 10);
-                    const negativeVotes = Number.parseInt(negVotesText, 10);
-                    const totalVotes = positiveVotes + negativeVotes;
-
-                    if (totalVotes > 0) {
-                        const average = positiveVotes / totalVotes;
-                        const score = average - (average - 0.5) * (2 ** -Math.log10(totalVotes + 1));
-
-                        let ratingClass = 'poor';
-                        if (totalVotes < 500) {
-                            ratingClass = 'white';
-                        } else if (score > 0.74) {
-                            ratingClass = 'good';
-                        } else if (score > 0.49) {
-                            ratingClass = 'average';
-                        }
-
-                        const className = `steamdb_rating_${ratingClass}`;
-                        const textContent = (score * 100).toFixed(2) + '%';
-                        ratingHtml = `<div class="og-rating"><span class="${className}">${textContent}</span></div>`;
-                    }
-                }
-
-                let screenshots: string[] =[];
-                const carouselDiv = doc.querySelector('.gamehighlight_desktopcarousel');
-                if (carouselDiv) {
-                    const dataProps = carouselDiv.getAttribute('data-props');
-                    if (dataProps) {
-                        try {
-                            const parsedData = JSON.parse(dataProps);
-                            let rawThumbnails: string[] =[];
-
-                            if (parsedData.screenshots && Array.isArray(parsedData.screenshots)) {
-                                rawThumbnails.push(...parsedData.screenshots.map((s: any) => s.thumbnail));
-                            }
-                            screenshots = rawThumbnails.filter((src: string) => src);
-                        } catch (e) {
-                            console.error('Error parsing Steam data-props', e);
-                        }
-                    }
-                }
-
-                // Создаём массив пар {originalUrl, localPath}
-                let screenshotData: {originalUrl: string, localPath: string | null}[] = screenshots.map(src => ({originalUrl: src, localPath: null}));
-                if (this.settings.saveImagesLocally && screenshots.length > 0) {
-                    new Notice(t('downloadingScreenshots', screenshots.length.toString()));
-                    const downloadPromises = screenshots.map((src, index) =>
-                        this.downloadAndSaveImage(src, `screenshot-${index}`, sourcePath, useProxy)
+                if (this.settings.saveImagesLocally) {
+                    new Notice(t('downloadingScreenshots', cardData.screenshots.length.toString()));
+                    const downloadPromises = cardData.screenshots.map((s, index) =>
+                        this.downloadAndSaveImage(s.originalUrl, `screenshot-${index}`, sourcePath, useProxy)
                     );
 
                     const files = await Promise.all(downloadPromises);
-                    screenshotData = screenshots.map((src, i) => ({
-                        originalUrl: src,
+                    screenshotData = cardData.screenshots.map((s, i) => ({
+                        originalUrl: s.originalUrl,
                         localPath: files[i] ? encodeURI(files[i]!.path) : null
                     })).filter(d => d.localPath !== null || d.originalUrl);
                 }
-
-                let screenshotsHtml = '';
-                if (screenshotData.length > 0) {
-                    screenshotsHtml = `<div class="og-screenshots">` +
-                        screenshotData.map(d => {
-                            const src = d.localPath || d.originalUrl;
-                            const dataUrlAttr = this.settings.saveImagesLocally && d.localPath ? ` data-url="${this.escapeHTML(d.originalUrl)}"` : '';
-                            return `<img src="${this.escapeHTML(src)}" class="og-screenshot"${dataUrlAttr} />`;
-                        }).join('') +
-                        `</div>`;
-                }
-
-                const tagNodes = doc.querySelectorAll('.popular_tags a');
-                const tags = Array.from(tagNodes)
-                    .map(a => a.textContent?.trim() || '')
-                    .filter(t => t !== '')
-                    .slice(0, 5);
-
-                let tagsHtml = '';
-                if (tags.length > 0) {
-                    tagsHtml = `<div class="og-tags">` +
-                        tags.map(t => `<div class="og-tag">${this.escapeHTML(t)}</div>`).join('') +
-                        `</div>`;
-                }
-
-                extraHtml = tagsHtml + screenshotsHtml;
             }
 
-            // Добавляем пользовательский текст если он есть
-            let userTextHtml = '';
-            if (userText && userText.trim() !== '') {
-                userTextHtml = `<div class="og-user-text">${this.escapeHTML(userText)}</div><!--og-user-text-end-->`;
-            }
-
-            // Генерируем уникальный идентификатор карточки на основе timestamp
-            const cardId = Date.now();
-
-            const htmlBlock = `<div class="og-card" card-id="${cardId}">${imageHtml}<div class="og-content"><div class="og-title">${title}</div>${ratingHtml}<div class="og-description">${description}</div>${extraHtml}<div class="og-url"><a href="${safeUrl}">${safeUrl}</a></div>${userTextHtml}</div><!--og-card-end ${cardId}--></div>`;
+            // Генерируем HTML с помощью HtmlBuilder
+            const cardId = HtmlBuilder.generateCardId();
+            const htmlBuilder = new HtmlBuilder(cardId);
+            const htmlBlock = htmlBuilder.buildCard(cardData, imageData, screenshotData);
 
             editor.replaceRange(htmlBlock, urlInfo.from, urlInfo.to);
             // Устанавливаем курсор в начало карточки для предотвращения прыжков прокрутки
@@ -586,7 +228,7 @@ export default class OpenGraphPlugin extends Plugin {
         }
     }
 
-    async updateCardUserText(editor: Editor, cardInfo: { url: string, userText: string, from: any, to: any }, newText: string) {
+    async updateCardUserText(editor: Editor, cardInfo: CardInfo, newText: string) {
         // Получаем текущий HTML карточки
         const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
 
@@ -624,9 +266,9 @@ export default class OpenGraphPlugin extends Plugin {
                 return; // Нечего удалять
             }
         } else {
-            // Формируем новый блок с пользовательским текстом
-            const escapedText = this.escapeHTML(newText);
-            const userTextBlock = `<div class="og-user-text">${escapedText}</div><!--og-user-text-end-->`;
+            // Используем HtmlBuilder для генерации блока пользовательского текста
+            const htmlBuilder = new HtmlBuilder(parseInt(cardId || '0'));
+            const userTextBlock = htmlBuilder.buildUserText(newText);
 
             if (existingUserTextMatch) {
                 // Заменяем существующий блок
@@ -654,7 +296,7 @@ export default class OpenGraphPlugin extends Plugin {
         editor.setCursor(cardInfo.from);
     }
 
-    toggleCardOrientation(editor: Editor, cardInfo: { url: string, userText: string, from: any, to: any }) {
+    toggleCardOrientation(editor: Editor, cardInfo: CardInfo) {
         const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
         const isVertical = cardHtml.includes('og-card-vertical');
 
@@ -673,200 +315,4 @@ export default class OpenGraphPlugin extends Plugin {
         editor.setCursor(cardInfo.from);
     }
 
-    escapeHTML(str: string) {
-        return str.replace(/[&<>'"]/g,
-            tag => ({
-                '&': '&amp;',
-                '<': '&lt;',
-                '>': '&gt;',
-                "'": '&#39;',
-                '"': '&quot;'
-            }[tag] || tag)
-        );
-    }
-
-    /**
-     * Извлекает все значения атрибутов src из тегов <img> в HTML карточки
-     * @param html - HTML-код карточки
-     * @returns массив путей/URL из атрибутов src
-     */
-    getImageSourcesFromCard(html: string): string[] {
-        const sources: string[] = [];
-        // Ищем все img теги с классом og-image или og-screenshot (порядок атрибутов может быть любым)
-        const imgRegex = /<img[^>]*class="og-(?:image|screenshot)"[^>]*>/gi;
-        const srcRegex = /src="([^"]+)"/i;
-
-        let imgMatch;
-        while ((imgMatch = imgRegex.exec(html)) !== null) {
-            const srcMatch = srcRegex.exec(imgMatch[0]);
-            if (srcMatch) {
-                sources.push(srcMatch[1]);
-            }
-        }
-        return sources;
-    }
-
-    /**
-     * Фильтрует источники, возвращая только локальные пути (не URL)
-     * @param sources - массив всех источников изображений
-     * @returns массив только локальных путей
-     */
-    filterLocalPaths(sources: string[]): string[] {
-        const urlPattern = /^https?:\/\//i;
-        return sources.filter(source => !urlPattern.test(source));
-    }
-
-    /**
-     * Классифицирует источники изображений по типу (локальные пути или URL)
-     * @param sources - массив всех источников изображений
-     * @returns объект классификации с типом и разделёнными путями
-     */
-    classifyImageSources(sources: string[]): ImageSourceClassification {
-        const urlPattern = /^https?:\/\//i;
-        const localPaths: string[] = [];
-        const urlPaths: string[] = [];
-
-        for (const source of sources) {
-            if (urlPattern.test(source)) {
-                urlPaths.push(source);
-            } else {
-                localPaths.push(source);
-            }
-        }
-
-        // Определяем тип источников
-        let type: 'local' | 'url' | 'mixed' | 'empty';
-        if (localPaths.length === 0 && urlPaths.length === 0) {
-            type = 'empty';
-        } else if (localPaths.length > 0 && urlPaths.length > 0) {
-            type = 'mixed';
-        } else if (localPaths.length > 0) {
-            type = 'local';
-        } else {
-            type = 'url';
-        }
-
-        return { type, localPaths, urlPaths };
-    }
-
-    /**
-     * Удаляет локальные файлы изображений из хранилища
-     * @param paths - массив локальных путей к файлам
-     */
-    async deleteLocalImages(paths: string[]): Promise<void> {
-        for (const path of paths) {
-            try {
-                const file = this.app.vault.getAbstractFileByPath(path);
-                if (file instanceof TFile) {
-                    await this.app.vault.delete(file);
-                }
-            } catch (error) {
-                console.error(`Failed to delete image: ${path}`, error);
-            }
-        }
-    }
-
-    /**
-     * Координирующий метод для очистки локальных изображений карточки
-     * @param cardHtml - HTML-код карточки
-     * Удаляет локальные изображения, URL игнорируются
-     */
-    async cleanupCardImages(cardHtml: string): Promise<void> {
-        const sources = this.getImageSourcesFromCard(cardHtml);
-        const classification = this.classifyImageSources(sources);
-
-        // Удаляем локальные пути (URL игнорируются)
-        if (classification.localPaths.length > 0) {
-            await this.deleteLocalImages(classification.localPaths);
-        }
-    }
-}
-
-class OpenGraphSettingTab extends PluginSettingTab {
-    plugin: OpenGraphPlugin;
-
-    constructor(app: App, plugin: OpenGraphPlugin) {
-        super(app, plugin);
-        this.plugin = plugin;
-    }
-
-    display(): void {
-        const {containerEl} = this;
-        containerEl.empty();
-
-        containerEl.createEl('h2', {text: t('settingsTitle')});
-
-        new Setting(containerEl)
-            .setName(t('proxyName'))
-            .setDesc(t('proxyDesc'))
-            .addText(text => text
-                .setPlaceholder('socks5://127.0.0.1:1080')
-                .setValue(this.plugin.settings.proxy)
-                .onChange(async (value) => {
-                    this.plugin.settings.proxy = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName(t('saveImagesName'))
-            .setDesc(t('saveImagesDesc'))
-                .addToggle(toggle => toggle
-                    .setValue(this.plugin.settings.saveImagesLocally)
-                    .onChange(async (value) => {
-                        this.plugin.settings.saveImagesLocally = value;
-                        await this.plugin.saveSettings();
-                    }));
-    }
-}
-
-class CardDescriptionModal extends Modal {
-    private text: string;
-    private onSave: (text: string) => void;
-    private textarea: HTMLTextAreaElement;
-
-    constructor(app: App, currentText: string, onSave: (text: string) => void) {
-        super(app);
-        this.text = currentText;
-        this.onSave = onSave;
-    }
-
-    onOpen() {
-        const { contentEl } = this;
-
-        contentEl.createEl('h2', { text: t('cardDescription') });
-
-        this.textarea = contentEl.createEl('textarea', {
-            attr: {
-                style: 'width: 100%; height: 200px; resize: vertical; margin-bottom: 1em;'
-            }
-        });
-        this.textarea.value = this.text;
-
-        const buttonContainer = contentEl.createDiv({
-            attr: {
-                style: 'display: flex; justify-content: flex-end; gap: 0.5em;'
-            }
-        });
-
-        const saveButton = buttonContainer.createEl('button', { text: t('save'), attr: { class: 'mod-cta' } });
-        saveButton.addEventListener('click', () => {
-            this.onSave(this.textarea.value);
-            this.close();
-        });
-
-        const cancelButton = buttonContainer.createEl('button', { text: t('cancel') });
-        cancelButton.addEventListener('click', () => {
-            this.close();
-        });
-
-        // Фокус на textarea при открытии
-        this.textarea.focus();
-        // Выделение всего текста описания
-        this.textarea.select();
-    }
-
-    onClose() {
-        const { contentEl } = this;
-        contentEl.empty();
-    }
 }
