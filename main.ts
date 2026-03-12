@@ -436,7 +436,7 @@ export default class OpenGraphPlugin extends Plugin {
                     new Notice(t('downloadingCover'));
                     const imgFile = await this.downloadAndSaveImage(image, 'og-image', sourcePath, useProxy);
                     if (imgFile) {
-                        image = encodeURI(imgFile.name);
+                        image = encodeURI(imgFile.path);
                     }
                 }
                 const dataUrlAttr = this.settings.saveImagesLocally ? ` data-url="${this.escapeHTML(originalImageUrl)}"` : '';
@@ -507,7 +507,7 @@ export default class OpenGraphPlugin extends Plugin {
                     const files = await Promise.all(downloadPromises);
                     screenshotData = screenshots.map((src, i) => ({
                         originalUrl: src,
-                        localPath: files[i] ? encodeURI(files[i]!.name) : null
+                        localPath: files[i] ? encodeURI(files[i]!.path) : null
                     })).filter(d => d.localPath !== null || d.originalUrl);
                 }
 
