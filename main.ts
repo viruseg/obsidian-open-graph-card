@@ -525,6 +525,13 @@ export default class OpenGraphPlugin extends Plugin {
                 extraHtml = tagsHtml + screenshotsHtml;
             }
 
+            // Добавляем пользовательский текст если он есть
+            let userTextHtml = '';
+            if (userText && userText.trim() !== '') {
+                userTextHtml = `<div class="og-user-text">${this.escapeHTML(userText)}</div>
+    <!--og-user-text-end-->`;
+            }
+
             const htmlBlock =
                 `<div class="og-card">
     ${imageHtml}
@@ -534,6 +541,7 @@ export default class OpenGraphPlugin extends Plugin {
         <div class="og-description">${description}</div>
         ${extraHtml}
         <div class="og-url"><a href="${safeUrl}">${safeUrl}</a></div>
+        ${userTextHtml}
     </div>
     <!--og-card-end-->
 </div>`;
@@ -583,10 +591,20 @@ export default class OpenGraphPlugin extends Plugin {
                 // Заменяем существующий блок
                 newCardHtml = cardHtml.replace(userTextRegex, userTextBlock);
             } else {
-                // Вставляем новый блок перед <!--og-card-end-->
-                const beforeEnd = cardHtml.substring(0, cardEndIndex);
-                const afterEnd = cardHtml.substring(cardEndIndex);
-                newCardHtml = beforeEnd + '        ' + userTextBlock + '\n    ' + afterEnd;
+                // Вставляем новый блок перед </div>, который находится перед <!--og-card-end-->
+                const beforeMarker = cardHtml.substring(0, cardEndIndex);
+                // Ищем последний </div> перед маркером
+                const closingDivIndex = beforeMarker.lastIndexOf('</div>');
+
+                if (closingDivIndex !== -1) {
+                    const beforeDiv = cardHtml.substring(0, closingDivIndex);
+                    const fromDivToEnd = cardHtml.substring(closingDivIndex);
+                    newCardHtml = beforeDiv + '        ' + userTextBlock + '\n    ' + fromDivToEnd;
+                } else {
+                    // Fallback: если </div> не найден, вставляем перед <!--og-card-end-->
+                    const afterMarker = cardHtml.substring(cardEndIndex);
+                    newCardHtml = beforeMarker + '        ' + userTextBlock + '\n    ' + afterMarker;
+                }
             }
         }
 

@@ -156,6 +156,5 @@
 
 .og-card-vertical .og-user-text
 {
-    width: -webkit-fill-available;
-    padding: 0 1rem 1rem;
+    padding-bottom: 1rem;
 }
