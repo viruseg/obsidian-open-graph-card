@@ -5,9 +5,9 @@ Coding patterns and conventions for the Open Graph Card plugin.
 ## Code Style
 
 ### HTML Generation
-- Generate HTML as template literals with proper indentation
+- Generate HTML via [`HtmlBuilder`](src/builders/HtmlBuilder.ts) class
 - Always include HTML comment markers: `<!--og-card-end-->` and `<!--og-user-text-end-->`
-- Use [`escapeHTML()`](main.ts:512) for all user-provided content
+- Use [`escapeHTML()`](src/utils/html.ts) for all user-provided content
 
 ### Adding New Translations
 1. Add key to [`i18n/en.ts`](i18n/en.ts) first (default fallback)
@@ -17,6 +17,7 @@ Coding patterns and conventions for the Open Graph Card plugin.
 
 ### Proxy Detection Pattern
 ```typescript
+// See FetchService.createAgent()
 if (proxyUrl.startsWith('socks')) {
     agent = new SocksProxyAgent(proxyUrl);
 } else if (proxyUrl.startsWith('http')) {
@@ -25,14 +26,28 @@ if (proxyUrl.startsWith('socks')) {
 ```
 
 ### Fetch Strategy
-- Use `requestUrl()` from Obsidian API for direct requests
-- Use `node-fetch` with agent for proxy requests
+- Use [`FetchService.fetchHtml()`](src/services/FetchService.ts:44) for HTML content
+- Use [`FetchService.fetchBinary()`](src/services/FetchService.ts:80) for binary data (images)
 - Always set User-Agent header for external sites
 
 ### Steam Detection
-Check hostname: `parsedUrl.hostname === 'store.steampowered.com'`
+Check hostname via parser: [`SteamParser.canParse()`](src/parsers/SteamParser.ts) checks for `store.steampowered.com`
+
+## Module Organization
+
+### Creating New Parser
+1. Create class extending [`OpenGraphParser`](src/parsers/OpenGraphParser.ts)
+2. Implement `canParse(hostname: string): boolean`
+3. Implement `parse(doc: Document, url: string): Promise<CardData>`
+4. Register in [`ParserRegistry`](src/parsers/ParserRegistry.ts)
+
+### Creating New Service
+1. Create service class in `src/services/`
+2. Add to [`PluginContext`](src/core/PluginContext.ts) interface
+3. Initialize in [`OpenGraphPlugin`](main.ts) onload method
 
 ## Common Gotchas
 - `node-fetch@2` required (CommonJS) - do not upgrade to v3+
 - `posAtDOM()` can throw - wrap in try/catch
 - Card parsing must handle both `<` and `\x3C` for HTML entities
+- CSS classes must use [`CSS_CLASSES`](src/utils/constants.ts) constants
