@@ -7,6 +7,7 @@ import { CardData, ScreenshotData } from './src/types';
 import { ContextMenuHandler, CardInfo, UrlInfo } from './src/ui';
 import { SettingsTab } from './src/ui';
 import { HtmlBuilder, ImageData } from './src/builders';
+import { CARD_BOUNDS } from './src/utils/constants';
 
 export default class OpenGraphPlugin extends Plugin {
     settings: OpenGraphSettings;
@@ -54,7 +55,7 @@ export default class OpenGraphPlugin extends Plugin {
         let cardId: string | null = null;
 
         // 1. Ищем начало карточки поднимаясь вверх по строкам
-        for (let i = baseLine; i >= Math.max(0, baseLine - 100); i--) {
+        for (let i = baseLine; i >= Math.max(0, baseLine - CARD_BOUNDS.LOOK_UP_LINES); i--) {
             const lineText = editor.getLine(i);
             if (lineText.includes('<div class="og-card')) {
                 startLine = i;
@@ -69,7 +70,7 @@ export default class OpenGraphPlugin extends Plugin {
 
         // 2. Ищем вниз (на случай, если posAtDOM указал чуть выше из-за пустых строк перед блоком)
         if (startLine === -1) {
-            for (let i = baseLine + 1; i <= Math.min(editor.lineCount() - 1, baseLine + 10); i++) {
+            for (let i = baseLine + 1; i <= Math.min(editor.lineCount() - 1, baseLine + CARD_BOUNDS.LOOK_DOWN_LINES); i++) {
                 const lineText = editor.getLine(i);
                 if (lineText.includes('<div class="og-card')) {
                     startLine = i;
@@ -85,8 +86,8 @@ export default class OpenGraphPlugin extends Plugin {
 
         if (startLine === -1) return null;
 
-        // Собираем текст карточки для парсинга (запас вниз 200 строк)
-        const maxLookForward = Math.min(editor.lineCount() - 1, startLine + 200);
+        // Собираем текст карточки для парсинга (запас вниз 20 строк)
+        const maxLookForward = Math.min(editor.lineCount() - 1, startLine + CARD_BOUNDS.LOOK_FORWARD_LINES);
         const lines: string[] =[];
         for (let i = startLine; i <= maxLookForward; i++) {
             lines.push(editor.getLine(i));

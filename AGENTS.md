@@ -192,9 +192,9 @@ All CSS classes are centralized in [`src/utils/constants.ts`](src/utils/constant
 
 ### Card Bounds Constants
 Defined in [`CARD_BOUNDS`](src/utils/constants.ts:24):
-- `LOOK_UP_LINES: 100` - Lines to search upward for card start
+- `LOOK_UP_LINES: 10` - Lines to search upward for card start
 - `LOOK_DOWN_LINES: 10` - Lines to search downward for card start
-- `LOOK_FORWARD_LINES: 200` - Lines to search forward for card end
+- `LOOK_FORWARD_LINES: 20` - Lines to search forward for card end
 
 ### Image Notes Sync
 Each card with local images has a corresponding note file with markdown links.

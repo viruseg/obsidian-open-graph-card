@@ -22,7 +22,7 @@ export const STEAM_RATING_CLASSES = {
 } as const;
 
 export const CARD_BOUNDS = {
-    LOOK_UP_LINES: 100,
+    LOOK_UP_LINES: 10,
     LOOK_DOWN_LINES: 10,
-    LOOK_FORWARD_LINES: 200
+    LOOK_FORWARD_LINES: 20
 } as const;

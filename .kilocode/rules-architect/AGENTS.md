@@ -132,9 +132,9 @@ All CSS classes are centralized in [`src/utils/constants.ts`](src/utils/constant
 
 ### Card Bounds Constants
 Defined in [`CARD_BOUNDS`](src/utils/constants.ts:24):
-- `LOOK_UP_LINES: 100` - Lines to search upward for card start
+- `LOOK_UP_LINES: 10` - Lines to search upward for card start
 - `LOOK_DOWN_LINES: 10` - Lines to search downward for card start
-- `LOOK_FORWARD_LINES: 200` - Lines to search forward for card end
+- `LOOK_FORWARD_LINES: 20` - Lines to search forward for card end
 
 ### Image Notes Sync Pattern
 Each card with local images has a corresponding note file with markdown links:
@@ -146,6 +146,6 @@ Each card with local images has a corresponding note file with markdown links:
 - Provides Obsidian-native access to card images via note links
 
 ## Performance Considerations
-- Card parsing looks up to 100 lines up, 10 lines down, 200 lines forward
+- Card parsing looks up to 10 lines up, 10 lines down, 20 lines forward
 - Image downloads use `Promise.all()` for parallel processing
 - No caching - each update re-fetches all data
