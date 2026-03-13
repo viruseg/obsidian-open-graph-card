@@ -46,8 +46,24 @@ Check hostname via parser: [`SteamParser.canParse()`](src/parsers/SteamParser.ts
 2. Add to [`PluginContext`](src/core/PluginContext.ts) interface
 3. Initialize in [`OpenGraphPlugin`](main.ts) onload method
 
+## Image Operations Pattern
+```typescript
+// Download images to vault
+const { result, updatedHtml } = await imageService.downloadCardImages(cardHtml, cardId, sourcePath, useProxy);
+// result.downloadedCount, result.errors
+
+// Restore original URLs
+const { result, updatedHtml } = await imageService.restoreCardImages(cardHtml);
+// result.restoredCount, result.errors
+
+// Check image sources
+const { hasUrlImages, hasLocalImages } = imageService.classifyCardImageSources(cardHtml);
+```
+
 ## Common Gotchas
 - `node-fetch@2` required (CommonJS) - do not upgrade to v3+
 - `posAtDOM()` can throw - wrap in try/catch
 - Card parsing must handle both `<` and `\x3C` for HTML entities
 - CSS classes must use [`CSS_CLASSES`](src/utils/constants.ts) constants
+- Local images store original URL in `data-url` attribute
+- Use [`replaceImageInCard()`](src/utils/html.ts:123) to update image src while preserving data-url

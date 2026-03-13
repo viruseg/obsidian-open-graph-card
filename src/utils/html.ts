@@ -2,6 +2,8 @@
  * Утилиты для работы с HTML
  */
 
+import { ImageDataUrlInfo } from '../types';
+
 /**
  * Экранирует специальные HTML символы
  * @param str - строка для экранирования
@@ -77,4 +79,82 @@ export function getImageSourcesFromCard(html: string): string[] {
         }
     }
     return sources;
+}
+
+/**
+ * Извлекает информацию о data-url из всех изображений в карточке
+ * @param html - HTML-код карточки
+ * @returns массив информации об изображениях с их data-url
+ */
+export function getImageDataUrlsFromCard(html: string): ImageDataUrlInfo[] {
+    const result: ImageDataUrlInfo[] = [];
+    // Ищем все img теги с классом og-image или og-screenshot
+    const imgRegex = /<img[^>]*class="og-(?:image|screenshot)"[^>]*>/gi;
+    const srcRegex = /src="([^"]+)"/i;
+    const dataUrlRegex = /data-url="([^"]+)"/i;
+
+    let elementIndex = 0;
+    let imgMatch;
+    while ((imgMatch = imgRegex.exec(html)) !== null) {
+        const imgTag = imgMatch[0];
+        const srcMatch = srcRegex.exec(imgTag);
+        const dataUrlMatch = dataUrlRegex.exec(imgTag);
+
+        if (srcMatch) {
+            result.push({
+                elementIndex: elementIndex,
+                src: srcMatch[1],
+                dataUrl: dataUrlMatch ? dataUrlMatch[1] : null
+            });
+        }
+        elementIndex++;
+    }
+    return result;
+}
+
+/**
+ * Заменяет src изображения в карточке по индексу элемента
+ * @param html - HTML-код карточки
+ * @param elementIndex - индекс изображения (порядковый номер img тега)
+ * @param newSrc - новый src для изображения
+ * @param dataUrl - новый data-url (null для удаления, undefined для сохранения текущего)
+ * @returns модифицированный HTML-код карточки
+ */
+export function replaceImageInCard(
+    html: string,
+    elementIndex: number,
+    newSrc: string,
+    dataUrl?: string | null
+): string {
+    const imgRegex = /<img([^>]*class="og-(?:image|screenshot)"[^>]*?)>/gi;
+    let currentIndex = 0;
+
+    return html.replace(imgRegex, (fullMatch: string, attrs: string) => {
+        if (currentIndex !== elementIndex) {
+            currentIndex++;
+            return fullMatch;
+        }
+        currentIndex++;
+
+        // Заменяем src
+        let newAttrs = attrs.replace(/src="[^"]*"/i, `src="${newSrc}"`);
+
+        // Обрабатываем data-url
+        const hasDataUrl = /data-url="[^"]*"/i.test(newAttrs);
+
+        if (dataUrl === null) {
+            // Удаляем data-url
+            newAttrs = newAttrs.replace(/\s*data-url="[^"]*"/i, '');
+        } else if (dataUrl !== undefined) {
+            // Устанавливаем новый data-url
+            if (hasDataUrl) {
+                newAttrs = newAttrs.replace(/data-url="[^"]*"/i, `data-url="${dataUrl}"`);
+            } else {
+                newAttrs += ` data-url="${dataUrl}"`;
+            }
+        }
+        // Если dataUrl === undefined, оставляем как есть
+
+        return `<img${newAttrs}>`;
+    });
 }

@@ -22,6 +22,8 @@ This Obsidian plugin converts URLs into visual Open Graph cards in markdown note
 - **Remove card**: Reverts card back to original URL
 - **Load Open Graph card**: Creates card from URL under cursor
 - **Paste as Open Graph card**: Creates card from clipboard URL
+- **Download images**: Downloads all remote images to vault (shown when card has URL images)
+- **Restore image URLs**: Restores original URLs and deletes local files (shown when card has local images)
 
 ## Supported Languages
 - English (en) - default

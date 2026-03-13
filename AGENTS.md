@@ -63,7 +63,7 @@ src/
 │   ├── index.ts        # Re-exports all types
 │   ├── settings.ts     # OpenGraphSettings, DEFAULT_SETTINGS
 │   ├── card.ts         # CardData, CardInfo, UrlInfo, RatingData, ScreenshotData
-│   └── image.ts        # ImageSourceClassification
+│   └── image.ts        # ImageSourceClassification, ImageDataUrlInfo, ImageDownloadResult, ImageRestoreResult
 │
 ├── core/
 │   └── PluginContext.ts    # Dependency Injection container
@@ -90,7 +90,7 @@ src/
 └── utils/
     ├── constants.ts       # CSS_CLASSES, STEAM_RATING_CLASSES, CARD_BOUNDS
     ├── editor.ts          # getUrlUnderCursor, setCursorWithScrollPrevention
-    └── html.ts            # escapeHTML, extractCardId, extractUrl, extractUserText
+    └── html.ts            # escapeHTML, extractCardId, extractUrl, extractUserText, getImageDataUrlsFromCard, replaceImageInCard
 ```
 
 ## Key Modules
@@ -111,6 +111,9 @@ Dependency Injection container that holds:
 - [`downloadAndSave()`](src/services/ImageService.ts:23) - Download and save image to vault
 - [`classifySources()`](src/services/ImageService.ts:49) - Classify image sources as local/url/mixed
 - [`cleanupCardImages()`](src/services/ImageService.ts:99) - Delete local images when card is removed
+- [`classifyCardImageSources()`](src/services/ImageService.ts:114) - Classify card images as URL/local
+- [`downloadCardImages()`](src/services/ImageService.ts:141) - Download all remote images in card
+- [`restoreCardImages()`](src/services/ImageService.ts:189) - Restore URLs from data-url attributes
 
 ### ParserRegistry ([`src/parsers/ParserRegistry.ts`](src/parsers/ParserRegistry.ts))
 - [`getParser(url)`](src/parsers/ParserRegistry.ts:16) - Returns appropriate parser for URL
@@ -131,6 +134,22 @@ Extends OpenGraphParser for Steam-specific data:
 - [`buildTags()`](src/builders/HtmlBuilder.ts:85) - Tags container
 - [`buildScreenshots()`](src/builders/HtmlBuilder.ts:95) - Screenshots grid
 - [`generateCardId()`](src/builders/HtmlBuilder.ts:118) - Timestamp-based unique ID
+
+### html.ts utilities ([`src/utils/html.ts`](src/utils/html.ts))
+- [`escapeHTML()`](src/utils/html.ts:12) - Escape special HTML characters
+- [`extractCardId()`](src/utils/html.ts:28) - Extract card-id from HTML
+- [`extractUrl()`](src/utils/html.ts:38) - Extract URL from card HTML
+- [`extractUserText()`](src/utils/html.ts:48) - Extract user text from card
+- [`getImageSourcesFromCard()`](src/utils/html.ts:68) - Get all img src values
+- [`getImageDataUrlsFromCard()`](src/utils/html.ts:89) - Get image data-url info array
+- [`replaceImageInCard()`](src/utils/html.ts:123) - Replace image src by index
+
+### ContextMenuHandler ([`src/ui/ContextMenuHandler.ts`](src/ui/ContextMenuHandler.ts))
+- [`createHandler()`](src/ui/ContextMenuHandler.ts:40) - Create editor-menu event handler
+- [`addCardMenuItems()`](src/ui/ContextMenuHandler.ts:74) - Add card context menu items
+- [`addImageMenuItems()`](src/ui/ContextMenuHandler.ts:226) - Add image-related menu items
+- [`handleDownloadImages()`](src/ui/ContextMenuHandler.ts:265) - Download images handler
+- [`handleRestoreImages()`](src/ui/ContextMenuHandler.ts:306) - Restore image URLs handler
 
 ## Architecture Patterns
 

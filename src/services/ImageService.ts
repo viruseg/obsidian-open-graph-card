@@ -1,7 +1,7 @@
 import { App, TFile } from 'obsidian';
 import { FetchService } from './FetchService';
-import { ImageSourceClassification } from '../types';
-import { getImageSourcesFromCard } from '../utils/html';
+import { ImageSourceClassification, ImageDownloadResult, ImageRestoreResult, ImageDataUrlInfo } from '../types';
+import { getImageSourcesFromCard, getImageDataUrlsFromCard, replaceImageInCard } from '../utils/html';
 
 /**
  * Сервис для работы с изображениями
@@ -104,5 +104,122 @@ export class ImageService {
         if (classification.localPaths.length > 0) {
             await this.deleteLocalImages(classification.localPaths);
         }
+    }
+
+    /**
+     * Классифицирует источники изображений в карточке
+     * @param cardHtml - HTML-код карточки
+     * @returns объект с флагами наличия URL и локальных изображений
+     */
+    classifyCardImageSources(cardHtml: string): { hasUrlImages: boolean; hasLocalImages: boolean } {
+        const imageData = getImageDataUrlsFromCard(cardHtml);
+
+        let hasUrlImages = false;
+        let hasLocalImages = false;
+
+        for (const img of imageData) {
+            if (img.dataUrl) {
+                // Изображение имеет data-url - это локальное изображение
+                hasLocalImages = true;
+            } else if (img.src.startsWith('https://') || img.src.startsWith('http://')) {
+                // Изображение без data-url с URL - это удалённое изображение
+                hasUrlImages = true;
+            }
+        }
+
+        return { hasUrlImages, hasLocalImages };
+    }
+
+    /**
+     * Скачивает все удалённые изображения в карточке и сохраняет их локально
+     * @param cardHtml - HTML-код карточки
+     * @param cardId - ID карточки для генерации имён файлов
+     * @param sourcePath - путь к файлу-источнику
+     * @param useProxy - использовать ли прокси
+     * @returns результат операции скачивания
+     */
+    async downloadCardImages(
+        cardHtml: string,
+        cardId: string,
+        sourcePath: string,
+        useProxy: boolean
+    ): Promise<{ result: ImageDownloadResult; updatedHtml: string }> {
+        const imageData = getImageDataUrlsFromCard(cardHtml);
+        const errors: string[] = [];
+        let downloadedCount = 0;
+        let updatedHtml = cardHtml;
+
+        for (const img of imageData) {
+            // Пропускаем изображения, которые уже имеют локальный путь (data-url)
+            if (img.dataUrl) continue;
+
+            // Пропускаем не-URL изображения
+            if (!img.src.startsWith('https://') && !img.src.startsWith('http://')) continue;
+
+            try {
+                const file = await this.downloadAndSave(img.src, `og-${cardId}`, sourcePath, useProxy);
+                if (file) {
+                    updatedHtml = replaceImageInCard(updatedHtml, img.elementIndex, file.path, img.src);
+                    downloadedCount++;
+                } else {
+                    errors.push(`Failed to download: ${img.src}`);
+                }
+            } catch (error) {
+                const errorMsg = error instanceof Error ? error.message : String(error);
+                errors.push(`Error downloading ${img.src}: ${errorMsg}`);
+            }
+        }
+
+        return {
+            result: {
+                success: downloadedCount > 0,
+                downloadedCount,
+                failedCount: errors.length,
+                errors
+            },
+            updatedHtml
+        };
+    }
+
+    /**
+     * Восстанавливает URL изображений из data-url атрибутов и удаляет локальные файлы
+     * @param cardHtml - HTML-код карточки
+     * @returns результат операции восстановления
+     */
+    async restoreCardImages(cardHtml: string): Promise<{ result: ImageRestoreResult; updatedHtml: string }> {
+        const imageData = getImageDataUrlsFromCard(cardHtml);
+        const errors: string[] = [];
+        let restoredCount = 0;
+        let updatedHtml = cardHtml;
+
+        for (const img of imageData) {
+            // Пропускаем изображения без data-url
+            if (!img.dataUrl) continue;
+
+            try {
+                // Удаляем локальный файл
+                const file = this.app.vault.getAbstractFileByPath(img.src);
+                if (file instanceof TFile) {
+                    await this.app.vault.delete(file);
+                }
+
+                // Восстанавливаем URL из data-url
+                updatedHtml = replaceImageInCard(updatedHtml, img.elementIndex, img.dataUrl, null);
+                restoredCount++;
+            } catch (error) {
+                const errorMsg = error instanceof Error ? error.message : String(error);
+                errors.push(`Error restoring ${img.src}: ${errorMsg}`);
+            }
+        }
+
+        return {
+            result: {
+                success: restoredCount > 0,
+                restoredCount,
+                failedCount: errors.length,
+                errors
+            },
+            updatedHtml
+        };
     }
 }

@@ -18,6 +18,13 @@ Debugging information for the Open Graph Card plugin.
 - Images use different fetch methods based on proxy setting
 - Check [`ImageService.downloadAndSave()`](src/services/ImageService.ts:23) for buffer handling
 - Extension extraction from URL pathname may fail silently
+- For card image operations, see [`downloadCardImages()`](src/services/ImageService.ts:141) and [`restoreCardImages()`](src/services/ImageService.ts:189)
+- Image data-url extraction via [`getImageDataUrlsFromCard()`](src/utils/html.ts:89)
+
+### Image Context Menu Issues
+- Download images menu item only appears when card has URL images (check [`classifyCardImageSources()`](src/services/ImageService.ts:114))
+- Restore images menu item only appears when card has local images with data-url attributes
+- Local images have `data-url` attribute storing original URL
 
 ### Steam Data Not Loading
 - Requires `wants_mature_content=1` cookie for age-gated content

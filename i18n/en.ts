@@ -24,5 +24,13 @@ export default {
     changeToVertical: 'Change to vertical card',
     cardEndMarkerNotFound: 'Card end marker not found',
     cancel: 'Cancel',
-    save: 'Save'
+    save: 'Save',
+    downloadCardImages: 'Download card images',
+    restoreCardImages: 'Restore card images',
+    downloadingCardImages: 'Downloading card images...',
+    restoringCardImages: 'Restoring card images...',
+    imagesDownloaded: 'Downloaded {0} image(s)',
+    imagesRestored: 'Restored {0} image(s)',
+    noImagesToDownload: 'No remote images to download',
+    noImagesToRestore: 'No local images to restore'
 };

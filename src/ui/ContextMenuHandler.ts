@@ -1,6 +1,7 @@
 import { EventRef, Menu, Editor, MarkdownView, Notice } from 'obsidian';
 import { PluginContext } from '../core/PluginContext';
 import { getUrlUnderCursor } from '../utils/editor';
+import { extractCardId } from '../utils/html';
 import { t } from '../../i18n';
 import { CardDescriptionModal } from './modals/CardDescriptionModal';
 
@@ -147,6 +148,9 @@ export class ContextMenuHandler {
                     this.callbacks.toggleCardOrientation(editor, cardInfo);
                 });
         });
+
+        // --- Пункты меню для работы с изображениями ---
+        this.addImageMenuItems(menu, editor, view, cardInfo, cardHtml);
     }
 
     private addUrlMenuItems(menu: Menu, editor: Editor, view: MarkdownView): void {
@@ -213,6 +217,117 @@ export class ContextMenuHandler {
             }
         } catch (e) {
             console.error('Clipboard access error', e);
+        }
+    }
+
+    /**
+     * Добавляет пункты меню для работы с изображениями
+     */
+    private addImageMenuItems(
+        menu: Menu,
+        editor: Editor,
+        view: MarkdownView,
+        cardInfo: CardInfo,
+        cardHtml: string
+    ): void {
+        const classification = this.context.imageService.classifyCardImageSources(cardHtml);
+
+        menu.addSeparator();
+
+        // Пункт "Загрузить изображения" - показываем только если есть URL изображения
+        if (classification.hasUrlImages) {
+            menu.addItem((item) => {
+                item
+                    .setTitle(t('downloadCardImages'))
+                    .setIcon('download')
+                    .onClick(async () => {
+                        await this.handleDownloadImages(editor, view, cardInfo, cardHtml);
+                    });
+            });
+        }
+
+        // Пункт "Восстановить изображения" - показываем только если есть локальные изображения
+        if (classification.hasLocalImages) {
+            menu.addItem((item) => {
+                item
+                    .setTitle(t('restoreCardImages'))
+                    .setIcon('upload')
+                    .onClick(async () => {
+                        await this.handleRestoreImages(editor, cardInfo, cardHtml);
+                    });
+            });
+        }
+    }
+
+    /**
+     * Обработчик скачивания изображений карточки
+     */
+    private async handleDownloadImages(
+        editor: Editor,
+        view: MarkdownView,
+        cardInfo: CardInfo,
+        cardHtml: string
+    ): Promise<void> {
+        const notice = new Notice(t('downloadingCardImages'), 0);
+
+        try {
+            const cardId = extractCardId(cardHtml) || Date.now().toString();
+            const sourcePath = view.file?.path || '';
+            const useProxy = false;
+
+            const { result, updatedHtml } = await this.context.imageService.downloadCardImages(
+                cardHtml,
+                cardId,
+                sourcePath,
+                useProxy
+            );
+
+            if (result.downloadedCount > 0) {
+                editor.replaceRange(updatedHtml, cardInfo.from, cardInfo.to);
+                new Notice(t('imagesDownloaded', result.downloadedCount.toString()));
+            } else {
+                new Notice(t('noImagesToDownload'));
+            }
+
+            if (result.errors.length > 0) {
+                console.error('Image download errors:', result.errors);
+            }
+        } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            new Notice(t('loadingError', errorMsg));
+        } finally {
+            notice.hide();
+        }
+    }
+
+    /**
+     * Обработчик восстановления URL изображений
+     */
+    private async handleRestoreImages(
+        editor: Editor,
+        cardInfo: CardInfo,
+        cardHtml: string
+    ): Promise<void> {
+        const notice = new Notice(t('restoringCardImages'), 0);
+
+        try {
+            const { result, updatedHtml } = await this.context.imageService.restoreCardImages(cardHtml);
+
+            if (result.restoredCount > 0) {
+                editor.replaceRange(updatedHtml, cardInfo.from, cardInfo.to);
+                new Notice(t('imagesRestored', result.restoredCount.toString()));
+            } else {
+                new Notice(t('noImagesToRestore'));
+            }
+
+            if (result.errors.length > 0) {
+                console.error('Image restore errors:', result.errors);
+            }
+        } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            new Notice(t('loadingError', errorMsg));
+        } finally {
+            notice.hide();
         }
     }
 }

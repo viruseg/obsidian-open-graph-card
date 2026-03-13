@@ -93,6 +93,9 @@ Dependency Injection container that holds:
 - [`downloadAndSave()`](src/services/ImageService.ts:23) - Download and save image to vault
 - [`classifySources()`](src/services/ImageService.ts:49) - Classify image sources as local/url/mixed
 - [`cleanupCardImages()`](src/services/ImageService.ts:99) - Delete local images when card is removed
+- [`classifyCardImageSources()`](src/services/ImageService.ts:114) - Classify card images as URL/local
+- [`downloadCardImages()`](src/services/ImageService.ts:141) - Download all remote images in card
+- [`restoreCardImages()`](src/services/ImageService.ts:189) - Restore URLs from data-url attributes
 
 ### ParserRegistry ([`src/parsers/ParserRegistry.ts`](src/parsers/ParserRegistry.ts))
 - [`getParser(url)`](src/parsers/ParserRegistry.ts:16) - Returns appropriate parser for URL

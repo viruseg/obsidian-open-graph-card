@@ -24,5 +24,13 @@ export default {
     changeToVertical: 'Изменить на вертикальную карточку',
     cardEndMarkerNotFound: 'Маркер конца карточки не найден',
     cancel: 'Отмена',
-    save: 'Сохранить'
+    save: 'Сохранить',
+    downloadCardImages: 'Загрузить изображения в карточке',
+    restoreCardImages: 'Выгрузить изображения в карточке',
+    downloadingCardImages: 'Загрузка изображений в карточке...',
+    restoringCardImages: 'Восстановление URL изображений...',
+    imagesDownloaded: 'Загружено {0} изображений',
+    imagesRestored: 'Восстановлено {0} изображений',
+    noImagesToDownload: 'Нет удалённых изображений для загрузки',
+    noImagesToRestore: 'Нет локальных изображений для выгрузки'
 };
