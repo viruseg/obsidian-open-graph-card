@@ -26,6 +26,14 @@ Debugging information for the Open Graph Card plugin.
 - Restore images menu item only appears when card has local images with data-url attributes
 - Local images have `data-url` attribute storing original URL
 
+### Image Notes Sync Issues
+- Note file location: `{attachmentFolderPath}/open-graph-card/{card-id}.md`
+- Check [`ImageNotesService.syncNote()`](src/services/ImageNotesService.ts:30) for sync logic
+- Note not created: verify card has local images (check via [`getImageDataUrlsFromCard()`](src/utils/html.ts:89))
+- Note not deleted: check if card still has local images or if file deletion failed
+- Orphan notes: may occur if card-id changes or card is manually edited
+- Debug via [`getNotePath()`](src/services/ImageNotesService.ts:83) to verify expected path
+
 ### Steam Data Not Loading
 - Requires `wants_mature_content=1` cookie for age-gated content
 - Screenshots parsed from JSON in `data-props` attribute
@@ -47,5 +55,6 @@ Debugging information for the Open Graph Card plugin.
 - [`src/ui/ContextMenuHandler.ts`](src/ui/ContextMenuHandler.ts) - Context menu, Live Preview integration
 - [`src/services/FetchService.ts`](src/services/FetchService.ts) - HTTP requests, proxy handling
 - [`src/services/ImageService.ts`](src/services/ImageService.ts) - Image download and management
+- [`src/services/ImageNotesService.ts`](src/services/ImageNotesService.ts) - Image notes synchronization
 - [`src/parsers/SteamParser.ts`](src/parsers/SteamParser.ts) - Steam-specific data extraction
 - [`src/utils/html.ts`](src/utils/html.ts) - HTML parsing utilities

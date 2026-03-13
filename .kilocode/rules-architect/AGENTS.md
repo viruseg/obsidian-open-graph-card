@@ -17,6 +17,7 @@ flowchart TB
     subgraph Services
         E[FetchService]
         F[ImageService]
+        G[ImageNotesService]
     end
     
     subgraph Parsers
@@ -45,8 +46,10 @@ flowchart TB
     B --> M
     M --> E
     M --> F
+    M --> G
     C --> E
     C --> F
+    C --> G
     E --> H
     B --> L
 ```
@@ -83,6 +86,7 @@ Dependency Injection container that holds:
 - `getSettings: () => OpenGraphSettings` - Settings accessor
 - `fetchService: FetchService` - HTTP requests
 - `imageService: ImageService` - Image operations
+- `imageNotesService: ImageNotesService` - Image notes synchronization
 
 ### FetchService ([`src/services/FetchService.ts`](src/services/FetchService.ts))
 - [`fetchHtml()`](src/services/FetchService.ts:44) - Fetch HTML content with optional proxy
@@ -96,6 +100,11 @@ Dependency Injection container that holds:
 - [`classifyCardImageSources()`](src/services/ImageService.ts:114) - Classify card images as URL/local
 - [`downloadCardImages()`](src/services/ImageService.ts:141) - Download all remote images in card
 - [`restoreCardImages()`](src/services/ImageService.ts:189) - Restore URLs from data-url attributes
+
+### ImageNotesService ([`src/services/ImageNotesService.ts`](src/services/ImageNotesService.ts))
+- [`syncNote()`](src/services/ImageNotesService.ts:30) - Synchronize note with card images
+- [`deleteNote()`](src/services/ImageNotesService.ts:64) - Delete card's note
+- [`getNotePath()`](src/services/ImageNotesService.ts:83) - Get note path by card ID
 
 ### ParserRegistry ([`src/parsers/ParserRegistry.ts`](src/parsers/ParserRegistry.ts))
 - [`getParser(url)`](src/parsers/ParserRegistry.ts:16) - Returns appropriate parser for URL
@@ -126,6 +135,15 @@ Defined in [`CARD_BOUNDS`](src/utils/constants.ts:24):
 - `LOOK_UP_LINES: 100` - Lines to search upward for card start
 - `LOOK_DOWN_LINES: 10` - Lines to search downward for card start
 - `LOOK_FORWARD_LINES: 200` - Lines to search forward for card end
+
+### Image Notes Sync Pattern
+Each card with local images has a corresponding note file with markdown links:
+- Notes stored in `{attachmentFolderPath}/open-graph-card/{card-id}.md`
+- [`ImageNotesService`](src/services/ImageNotesService.ts) maintains sync between card content and note file
+- Note created when card has local images
+- Note updated when images are added/removed
+- Note deleted when card is deleted or has no local images
+- Provides Obsidian-native access to card images via note links
 
 ## Performance Considerations
 - Card parsing looks up to 100 lines up, 10 lines down, 200 lines forward

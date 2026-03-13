@@ -80,8 +80,14 @@ export class ContextMenuHandler {
                 .onClick(async () => {
                     // Получаем HTML карточки до обновления
                     const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
+                    // Извлекаем card-id для удаления заметки
+                    const cardId = extractCardId(cardHtml);
                     // Очищаем локальные изображения
                     await this.context.imageService.cleanupCardImages(cardHtml);
+                    // Удаляем заметку с изображениями
+                    if (cardId) {
+                        await this.context.imageNotesService.deleteNote(cardId);
+                    }
                     // Создаём новую карточку
                     await this.callbacks.replaceWithOpenGraph(editor, view, { url: cardInfo.url, from: cardInfo.from, to: cardInfo.to }, false, cardInfo.userText);
                 });
@@ -96,8 +102,14 @@ export class ContextMenuHandler {
                     .onClick(async () => {
                         // Получаем HTML карточки до обновления
                         const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
+                        // Извлекаем card-id для удаления заметки
+                        const cardId = extractCardId(cardHtml);
                         // Очищаем локальные изображения
                         await this.context.imageService.cleanupCardImages(cardHtml);
+                        // Удаляем заметку с изображениями
+                        if (cardId) {
+                            await this.context.imageNotesService.deleteNote(cardId);
+                        }
                         // Создаём новую карточку
                         await this.callbacks.replaceWithOpenGraph(editor, view, { url: cardInfo.url, from: cardInfo.from, to: cardInfo.to }, true, cardInfo.userText);
                     });
@@ -112,8 +124,14 @@ export class ContextMenuHandler {
                 .onClick(async () => {
                     // Получаем HTML карточки до удаления
                     const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
+                    // Извлекаем card-id для удаления заметки
+                    const cardId = extractCardId(cardHtml);
                     // Очищаем локальные изображения
                     await this.context.imageService.cleanupCardImages(cardHtml);
+                    // Удаляем заметку с изображениями
+                    if (cardId) {
+                        await this.context.imageNotesService.deleteNote(cardId);
+                    }
                     // Заменяем карточку на URL
                     const replacement = cardInfo.url + (cardInfo.userText ? '\n' + cardInfo.userText : '');
                     editor.replaceRange(replacement, cardInfo.from, cardInfo.to);
@@ -284,6 +302,8 @@ export class ContextMenuHandler {
 
             if (result.downloadedCount > 0) {
                 editor.replaceRange(updatedHtml, cardInfo.from, cardInfo.to);
+                // Синхронизируем заметку с изображениями
+                await this.context.imageNotesService.syncNote(cardId, updatedHtml);
                 new Notice(t('imagesDownloaded', result.downloadedCount.toString()));
             } else {
                 new Notice(t('noImagesToDownload'));
@@ -311,10 +331,15 @@ export class ContextMenuHandler {
         const notice = new Notice(t('restoringCardImages'), 0);
 
         try {
+            const cardId = extractCardId(cardHtml);
             const { result, updatedHtml } = await this.context.imageService.restoreCardImages(cardHtml);
 
             if (result.restoredCount > 0) {
                 editor.replaceRange(updatedHtml, cardInfo.from, cardInfo.to);
+                // Синхронизируем заметку (удалит заметку т.к. локальных изображений больше нет)
+                if (cardId) {
+                    await this.context.imageNotesService.syncNote(cardId, updatedHtml);
+                }
                 new Notice(t('imagesRestored', result.restoredCount.toString()));
             } else {
                 new Notice(t('noImagesToRestore'));

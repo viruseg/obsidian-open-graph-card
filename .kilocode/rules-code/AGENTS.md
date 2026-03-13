@@ -60,6 +60,19 @@ const { result, updatedHtml } = await imageService.restoreCardImages(cardHtml);
 const { hasUrlImages, hasLocalImages } = imageService.classifyCardImageSources(cardHtml);
 ```
 
+## Image Notes Sync Pattern
+```typescript
+// Sync note with card images (create/update/delete as needed)
+await imageNotesService.syncNote(cardId, cardHtml);
+
+// Delete note when card is removed
+await imageNotesService.deleteNote(cardId);
+
+// Get note path for a card
+const notePath = imageNotesService.getNotePath(cardId);
+// Returns: '{attachmentFolderPath}/open-graph-card/{cardId}.md'
+```
+
 ## Common Gotchas
 - `node-fetch@2` required (CommonJS) - do not upgrade to v3+
 - `posAtDOM()` can throw - wrap in try/catch

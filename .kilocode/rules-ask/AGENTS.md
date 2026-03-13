@@ -11,6 +11,7 @@ This Obsidian plugin converts URLs into visual Open Graph cards in markdown note
 - Proxy support (HTTP and SOCKS5)
 - Local image saving option
 - Context menu integration in editor
+- Image notes synchronization - automatic creation of notes with links to card images
 
 ## User-Facing Settings
 - **Proxy**: HTTP or SOCKS5 proxy URL for bypassing restrictions
@@ -24,6 +25,14 @@ This Obsidian plugin converts URLs into visual Open Graph cards in markdown note
 - **Paste as Open Graph card**: Creates card from clipboard URL
 - **Download images**: Downloads all remote images to vault (shown when card has URL images)
 - **Restore image URLs**: Restores original URLs and deletes local files (shown when card has local images)
+
+## Image Notes
+When images are downloaded to vault, the plugin automatically creates a companion note file:
+- Location: `{attachmentFolderPath}/open-graph-card/{card-id}.md`
+- Contains markdown links to all card images
+- Updated automatically when images are added/removed
+- Deleted when card is removed or has no local images
+- Provides Obsidian-native access to card images (backlinks, graph view, etc.)
 
 ## Supported Languages
 - English (en) - default

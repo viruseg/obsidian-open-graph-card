@@ -222,6 +222,11 @@ export default class OpenGraphPlugin extends Plugin {
             // Устанавливаем курсор в начало карточки для предотвращения прыжков прокрутки
             editor.setCursor(urlInfo.from);
             new Notice(t('cardCreated'));
+
+            // Синхронизируем заметку с изображениями если есть локальные изображения
+            if (this.settings.saveImagesLocally) {
+                await this.context.imageNotesService.syncNote(cardId, htmlBlock);
+            }
         } catch (error) {
             console.error(error);
             new Notice(t('loadingError', error.message));
