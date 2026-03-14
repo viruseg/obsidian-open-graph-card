@@ -202,6 +202,11 @@ export default class OpenGraphPlugin extends Plugin {
         if (data.cardLinks.generatedNotePath) {
             const genNoteFile = this.app.vault.getAbstractFileByPath(data.cardLinks.generatedNotePath);
             if (genNoteFile instanceof TFile) {
+                // Проверяем существование файла перед чтением (защита от ENOENT при массовых операциях)
+                if (!(await this.app.vault.exists(genNoteFile))) {
+                    console.log(`OpenGraphPlugin: Generated note no longer exists: ${data.cardLinks.generatedNotePath}`);
+                    return;
+                }
                 try {
                     let content = await this.app.vault.read(genNoteFile);
                     // Удаляем ссылку на изображение из заметки

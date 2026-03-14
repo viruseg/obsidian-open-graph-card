@@ -84,8 +84,13 @@ export class ContextMenuHandler {
                     const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
                     // Извлекаем card-id для удаления заметки
                     const cardId = extractCardId(cardHtml);
-                    // Очищаем локальные изображения
-                    await this.context.imageService.cleanupCardImages(cardHtml);
+                    // Очищаем локальные изображения (в массовой операции для предотвращения ENOENT)
+                    this.context.fileLinkService.startBatchOperation();
+                    try {
+                        await this.context.imageService.cleanupCardImages(cardHtml);
+                    } finally {
+                        this.context.fileLinkService.endBatchOperation();
+                    }
                     // Удаляем заметку с изображениями (только если она пустая)
                     if (cardId) {
                         await this.context.imageNotesService.deleteNote(cardId);
