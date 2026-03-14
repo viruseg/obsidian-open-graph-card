@@ -27,6 +27,7 @@ flowchart TB
     
     subgraph Parsers
         I[OpenGraphParser]
+        I1[DefaultParser]
         J[SteamParser]
         K[ParserRegistry]
     end
@@ -61,6 +62,10 @@ flowchart TB
     B --> M
     F --> G
     F --> H
+    I1 --> I
+    J --> I
+    K --> I1
+    K --> J
 ```
 
 ## Project Structure
@@ -71,8 +76,9 @@ src/
 │   ├── index.ts        # Re-exports all types
 │   ├── settings.ts     # OpenGraphSettings, DEFAULT_SETTINGS
 │   ├── card.ts         # CardData, CardInfo, UrlInfo, RatingData, ScreenshotData
-│   ├── image.ts        # ImageSourceClassification, ImageDataUrlInfo, ImageDownloadResult, ImageRestoreResult
-│   └── fileLinks.ts    # CardLinks, FileLinkIndexes, FileLinksData, FileLinkInfo, FileDeletedEventData, FileRenamedEventData
+│   ├── image.ts        # ImageSourceClassification, ImageDataUrlInfo, ImageDownloadResult, ImageRestoreResult, ImageData
+│   ├── fileLinks.ts    # CardLinks, FileLinkIndexes, FileLinksData, FileLinkInfo, FileDeletedEventData, FileRenamedEventData
+│   └── ui.ts           # ContextMenuHandlerCallbacks
 │
 ├── core/
 │   └── PluginContext.ts    # Dependency Injection container
@@ -84,7 +90,8 @@ src/
 │   └── ImageNotesService.ts # Image notes synchronization
 │
 ├── parsers/
-│   ├── OpenGraphParser.ts  # Abstract base parser + DefaultParser
+│   ├── OpenGraphParser.ts  # Abstract base parser
+│   ├── DefaultParser.ts    # Default parser for regular sites
 │   ├── SteamParser.ts      # Steam-specific parser
 │   └── ParserRegistry.ts   # Parser selection by hostname
 │
@@ -143,10 +150,23 @@ Dependency Injection container that holds:
 - [`deleteNote()`](src/services/ImageNotesService.ts:64) - Delete card's note
 - [`getNotePath()`](src/services/ImageNotesService.ts:83) - Get note path by card ID
 
+### OpenGraphParser ([`src/parsers/OpenGraphParser.ts`](src/parsers/OpenGraphParser.ts))
+Abstract base class for all parsers:
+- [`canParse()`](src/parsers/OpenGraphParser.ts:10) - Abstract method to check if parser can handle URL
+- [`parse()`](src/parsers/OpenGraphParser.ts:15) - Abstract method to parse document
+- [`extractBasicData()`](src/parsers/OpenGraphParser.ts:20) - Extract basic Open Graph metadata
+- [`getHeaders()`](src/parsers/OpenGraphParser.ts:45) - Returns default HTTP headers
+
+### DefaultParser ([`src/parsers/DefaultParser.ts`](src/parsers/DefaultParser.ts))
+Default parser for regular websites, extends OpenGraphParser:
+- [`canParse()`](src/parsers/DefaultParser.ts:8) - Returns `true` for all sites (fallback)
+- [`parse()`](src/parsers/DefaultParser.ts:13) - Extracts basic Open Graph data
+
 ### ParserRegistry ([`src/parsers/ParserRegistry.ts`](src/parsers/ParserRegistry.ts))
-- [`getParser(url)`](src/parsers/ParserRegistry.ts:16) - Returns appropriate parser for URL
-- [`registerParser()`](src/parsers/ParserRegistry.ts:41) - Add custom parser
-- Singleton instance: [`parserRegistry`](src/parsers/ParserRegistry.ts:47)
+- [`getParser()`](src/parsers/ParserRegistry.ts:17) - Returns appropriate parser for URL
+- [`isSteamUrl()`](src/parsers/ParserRegistry.ts:30) - Check if URL is a Steam link
+- [`registerParser()`](src/parsers/ParserRegistry.ts:42) - Add custom parser
+- Singleton instance: [`parserRegistry`](src/parsers/ParserRegistry.ts:48)
 
 ### SteamParser ([`src/parsers/SteamParser.ts`](src/parsers/SteamParser.ts))
 Extends OpenGraphParser for Steam-specific data:
@@ -178,6 +198,20 @@ Extends OpenGraphParser for Steam-specific data:
 - [`addImageMenuItems()`](src/ui/ContextMenuHandler.ts:226) - Add image-related menu items
 - [`handleDownloadImages()`](src/ui/ContextMenuHandler.ts:265) - Download images handler
 - [`handleRestoreImages()`](src/ui/ContextMenuHandler.ts:306) - Restore image URLs handler
+
+### Types: image.ts ([`src/types/image.ts`](src/types/image.ts))
+- `ImageSourceClassification` - Classification result for image sources
+- `ImageDataUrlInfo` - Image element data-url information
+- `ImageDownloadResult` - Result of image download operation
+- `ImageRestoreResult` - Result of image restore operation
+- `ImageData` - Image data interface for card images
+
+### Types: ui.ts ([`src/types/ui.ts`](src/types/ui.ts))
+- `ContextMenuHandlerCallbacks` - Callback interface for ContextMenuHandler:
+  - `getCardUnderCursor` - Get card info under cursor
+  - `replaceWithOpenGraph` - Replace URL with Open Graph card
+  - `updateCardUserText` - Update user text in card
+  - `toggleCardOrientation` - Toggle card orientation
 
 ## Architecture Patterns
 
@@ -255,7 +289,7 @@ Each card can have the following links:
 1. Create a class extending [`OpenGraphParser`](src/parsers/OpenGraphParser.ts:6)
 2. Implement `canParse(hostname: string): boolean`
 3. Implement `parse(doc: Document, url: string): Promise<CardData>`
-4. Register via [`parserRegistry.registerParser()`](src/parsers/ParserRegistry.ts:41)
+4. Register via [`parserRegistry.registerParser()`](src/parsers/ParserRegistry.ts:42)
 
 ### Adding New Card Features
 1. Extend [`CardData`](src/types/card.ts) interface

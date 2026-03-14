@@ -1,4 +1,5 @@
-import { OpenGraphParser, DefaultParser } from './OpenGraphParser';
+import { OpenGraphParser } from './OpenGraphParser';
+import { DefaultParser } from './DefaultParser';
 import { SteamParser } from './SteamParser';
 
 /**

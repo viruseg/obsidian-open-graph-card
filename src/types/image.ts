@@ -23,3 +23,12 @@ export interface ImageRestoreResult {
     failedCount: number;
     errors: string[];
 }
+
+/**
+ * Интерфейс для данных изображения в карточке
+ */
+export interface ImageData {
+    src: string;
+    originalUrl?: string;
+    showDataUrl?: boolean;
+}

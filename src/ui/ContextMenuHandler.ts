@@ -4,26 +4,7 @@ import { getUrlUnderCursor } from '../utils/editor';
 import { extractCardId } from '../utils/html';
 import { t } from '../../i18n';
 import { CardDescriptionModal } from './modals/CardDescriptionModal';
-
-export interface CardInfo {
-    url: string;
-    userText: string;
-    from: any;
-    to: any;
-}
-
-export interface UrlInfo {
-    url: string;
-    from: any;
-    to: any;
-}
-
-export interface ContextMenuHandlerCallbacks {
-    getCardUnderCursor: (editor: Editor, targetLine?: number) => CardInfo | null;
-    replaceWithOpenGraph: (editor: Editor, view: MarkdownView, urlInfo: UrlInfo, useProxy: boolean, userText?: string) => Promise<void>;
-    updateCardUserText: (editor: Editor, cardInfo: CardInfo, newText: string) => Promise<void>;
-    toggleCardOrientation: (editor: Editor, cardInfo: CardInfo) => void;
-}
+import { CardInfo, UrlInfo, ContextMenuHandlerCallbacks } from '../types';
 
 export class ContextMenuHandler {
     private lastContextEventTarget: HTMLElement | null = null;

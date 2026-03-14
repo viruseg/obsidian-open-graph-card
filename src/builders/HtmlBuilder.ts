@@ -1,15 +1,6 @@
-import { CardData, RatingData, ScreenshotData } from '../types';
+import { CardData, RatingData, ScreenshotData, ImageData } from '../types';
 import { CSS_CLASSES } from '../utils/constants';
 import { escapeHTML } from '../utils/html';
-
-/**
- * Интерфейс для данных изображения в карточке
- */
-export interface ImageData {
-    src: string;
-    originalUrl?: string;
-    showDataUrl?: boolean;
-}
 
 /**
  * Строитель HTML для карточек Open Graph
