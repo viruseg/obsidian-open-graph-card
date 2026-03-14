@@ -87,6 +87,52 @@ export class ImageNotesService {
     }
 
     /**
+     * Удалить заметку карточки, если она пустая.
+     * Пустая заметка содержит только заголовок "# Images" или пуста.
+     *
+     * @param cardId - ID карточки
+     * @returns true если заметка была удалена, false если заметка не пустая или не существует
+     */
+    async deleteNoteIfEmpty(cardId: string): Promise<boolean> {
+        try {
+            const notePath = this.getNotePath(cardId);
+            const file = this.app.vault.getAbstractFileByPath(notePath);
+
+            if (!(file instanceof TFile)) {
+                return false;
+            }
+
+            const content = await this.app.vault.read(file);
+            const trimmedContent = content.trim();
+
+            // Проверяем, является ли заметка пустой
+            if (this.isEmptyNoteContent(trimmedContent)) {
+                await this.app.vault.delete(file);
+                this.fileLinkService.clearGeneratedNote(cardId);
+                return true;
+            }
+
+            return false;
+        } catch (error) {
+            console.error('Error deleting empty image note:', error);
+            return false;
+        }
+    }
+
+    /**
+     * Проверить, является ли содержимое заметки пустым.
+     * Пустое содержимое - это только заголовок "# Images" или пустая строка.
+     *
+     * @param content - содержимое заметки (уже обрезанное)
+     * @returns true если содержимое пустое
+     */
+    private isEmptyNoteContent(content: string): boolean {
+        return content === '' ||
+               content === '# Images' ||
+               content === '# Images\n';
+    }
+
+    /**
      * Получить путь к заметке относительно корня хранилища.
      *
      * @param cardId - ID карточки
