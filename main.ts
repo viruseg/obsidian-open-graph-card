@@ -379,12 +379,12 @@ export default class OpenGraphPlugin extends Plugin {
         };
     }
 
-    async downloadAndSaveImage(url: string, baseFilename: string, sourcePath: string, useProxy: boolean): Promise<TFile | null> {
-        return await this.context.imageService.downloadAndSave(url, baseFilename, sourcePath, useProxy);
+    async downloadAndSaveImage(url: string, baseFilename: string, sourcePath: string): Promise<TFile | null> {
+        return await this.context.imageService.downloadAndSave(url, baseFilename, sourcePath);
     }
 
-    async replaceWithOpenGraph(editor: Editor, view: MarkdownView, urlInfo: UrlInfo, useProxy: boolean, userText: string = '') {
-        new Notice(useProxy ? t('loadingProxy') : t('loading'));
+    async replaceWithOpenGraph(editor: Editor, view: MarkdownView, urlInfo: UrlInfo, userText: string = '') {
+        new Notice(t('loading'));
 
         try {
             // Получаем подходящий парсер для URL
@@ -393,16 +393,7 @@ export default class OpenGraphPlugin extends Plugin {
             // Получаем заголовки от парсера
             const headers = ogParser.getHeaders();
 
-            let html = '';
-            try {
-                html = await this.context.fetchService.fetchHtml(urlInfo.url, useProxy, headers);
-            } catch (error) {
-                if (useProxy) {
-                    new Notice(t('proxyError'));
-                    return;
-                }
-                throw error;
-            }
+            const html = await this.context.fetchService.fetchHtml(urlInfo.url, headers);
 
             const domParser = new DOMParser();
             const doc = domParser.parseFromString(html, 'text/html');
@@ -422,7 +413,7 @@ export default class OpenGraphPlugin extends Plugin {
                 const originalImageUrl = image;
                 if (this.settings.saveImagesLocally) {
                     new Notice(t('downloadingCover'));
-                    const imgFile = await this.downloadAndSaveImage(image, 'og-image', sourcePath, useProxy);
+                    const imgFile = await this.downloadAndSaveImage(image, 'og-image', sourcePath);
                     if (imgFile) {
                         image = encodeURI(imgFile.path);
                     }
@@ -442,7 +433,7 @@ export default class OpenGraphPlugin extends Plugin {
                 if (this.settings.saveImagesLocally) {
                     new Notice(t('downloadingScreenshots', cardData.screenshots.length.toString()));
                     const downloadPromises = cardData.screenshots.map((s, index) =>
-                        this.downloadAndSaveImage(s.originalUrl, `screenshot-${index}`, sourcePath, useProxy)
+                        this.downloadAndSaveImage(s.originalUrl, `screenshot-${index}`, sourcePath)
                     );
 
                     const files = await Promise.all(downloadPromises);

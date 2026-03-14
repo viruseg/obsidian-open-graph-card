@@ -37,7 +37,7 @@ export class PluginContext {
         this.getSettings = getSettings;
 
         // Инициализация сервисов
-        this.fetchService = new FetchService(getSettings);
+        this.fetchService = new FetchService();
         this.imageService = new ImageService(app, this.fetchService);
         this.fileLinkService = new FileLinkService(app, getFileLinksData, saveFileLinksData);
         this.imageNotesService = new ImageNotesService(app, this.imageService, this.fileLinkService);

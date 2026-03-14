@@ -84,7 +84,7 @@ src/
 │   └── PluginContext.ts    # Dependency Injection container
 │
 ├── services/
-│   ├── FetchService.ts     # HTTP requests with proxy support
+│   ├── FetchService.ts     # HTTP requests via Obsidian API
 │   ├── FileLinkService.ts  # File links tracking and events
 │   ├── ImageService.ts     # Image download, classification, cleanup
 │   └── ImageNotesService.ts # Image notes synchronization
@@ -123,9 +123,8 @@ Dependency Injection container that holds:
 - `imageNotesService: ImageNotesService` - Image notes synchronization
 
 ### FetchService ([`src/services/FetchService.ts`](src/services/FetchService.ts))
-- [`fetchHtml()`](src/services/FetchService.ts:44) - Fetch HTML content with optional proxy
-- [`fetchBinary()`](src/services/FetchService.ts:80) - Fetch binary data (images)
-- [`createAgent()`](src/services/FetchService.ts:17) - Creates proxy agent (HTTP/SOCKS5)
+- [`fetchHtml()`](src/services/FetchService.ts:13) - Fetch HTML content via Obsidian API
+- [`fetchBinary()`](src/services/FetchService.ts:29) - Fetch binary data (images) via Obsidian API
 
 ### FileLinkService ([`src/services/FileLinkService.ts`](src/services/FileLinkService.ts))
 - [`registerCard()`](src/services/FileLinkService.ts:53) — Register card with user note path
@@ -231,9 +230,6 @@ Uses CodeMirror's `posAtDOM()` method to map DOM elements back to editor positio
 - Screenshots parsed from JSON in `.gamehighlight_desktopcarousel` data-props attribute
 - Cookie header `wants_mature_content=1` for 18+ content
 
-### Proxy Architecture
-Dual proxy support via `https-proxy-agent` (HTTP) and `socks-proxy-agent` (SOCKS5). Proxy URL prefix determines agent type. See [`createAgent()`](src/services/FetchService.ts:17).
-
 ### i18n Pattern
 Uses `moment.locale()` for language detection. Translation keys use `{0}`, `{1}` placeholders substituted via [`t()`](i18n/index.ts:6) function.
 
@@ -298,12 +294,9 @@ Each card can have the following links:
 4. Add CSS to `styles.css`
 
 ## Key Dependencies
-- `node-fetch@2` (CommonJS version required for esbuild)
-- Obsidian API: `requestUrl()` for non-proxy requests, `node-fetch` for proxy requests
-- `https-proxy-agent` and `socks-proxy-agent` for proxy support
+- Obsidian API: `requestUrl()` for HTTP requests
 
 ## Desktop-Only Requirement
 Plugin must remain `isDesktopOnly: true` due to:
 - `electron` clipboard access in [`ContextMenuHandler`](src/ui/ContextMenuHandler.ts:184)
-- `node-fetch` for proxy support
 - File system operations for image management

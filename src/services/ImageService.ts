@@ -17,12 +17,11 @@ export class ImageService {
      * @param url - URL изображения
      * @param baseFilename - базовое имя файла
      * @param sourcePath - путь к файлу-источнику (для определения папки сохранения)
-     * @param useProxy - использовать ли прокси
      * @returns TFile если успешно, null если ошибка
      */
-    async downloadAndSave(url: string, baseFilename: string, sourcePath: string, useProxy: boolean): Promise<TFile | null> {
+    async downloadAndSave(url: string, baseFilename: string, sourcePath: string): Promise<TFile | null> {
         try {
-            const buffer = await this.fetchService.fetchBinary(url, useProxy);
+            const buffer = await this.fetchService.fetchBinary(url);
 
             let ext = 'jpg';
             try {
@@ -135,14 +134,12 @@ export class ImageService {
      * @param cardHtml - HTML-код карточки
      * @param cardId - ID карточки для генерации имён файлов
      * @param sourcePath - путь к файлу-источнику
-     * @param useProxy - использовать ли прокси
      * @returns результат операции скачивания
      */
     async downloadCardImages(
         cardHtml: string,
         cardId: string,
-        sourcePath: string,
-        useProxy: boolean
+        sourcePath: string
     ): Promise<{ result: ImageDownloadResult; updatedHtml: string }> {
         const imageData = getImageDataUrlsFromCard(cardHtml);
         const errors: string[] = [];
@@ -157,7 +154,7 @@ export class ImageService {
             if (!img.src.startsWith('https://') && !img.src.startsWith('http://')) continue;
 
             try {
-                const file = await this.downloadAndSave(img.src, `og-${cardId}`, sourcePath, useProxy);
+                const file = await this.downloadAndSave(img.src, `og-${cardId}`, sourcePath);
                 if (file) {
                     updatedHtml = replaceImageInCard(updatedHtml, img.elementIndex, file.path, img.src);
                     downloadedCount++;

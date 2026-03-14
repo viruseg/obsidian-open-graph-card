@@ -19,17 +19,6 @@ export class SettingsTab extends PluginSettingTab {
         containerEl.createEl('h2', { text: t('settingsTitle') });
 
         new Setting(containerEl)
-            .setName(t('proxyName'))
-            .setDesc(t('proxyDesc'))
-            .addText(text => text
-                .setPlaceholder('socks5://127.0.0.1:1080')
-                .setValue(this.settings.proxy)
-                .onChange(async (value) => {
-                    this.settings.proxy = value;
-                    await this.saveSettings();
-                }));
-
-        new Setting(containerEl)
             .setName(t('saveImagesName'))
             .setDesc(t('saveImagesDesc'))
             .addToggle(toggle => toggle

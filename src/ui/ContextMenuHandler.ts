@@ -70,32 +70,9 @@ export class ContextMenuHandler {
                         await this.context.imageNotesService.deleteNote(cardId);
                     }
                     // Создаём новую карточку
-                    await this.callbacks.replaceWithOpenGraph(editor, view, { url: cardInfo.url, from: cardInfo.from, to: cardInfo.to }, false, cardInfo.userText);
+                    await this.callbacks.replaceWithOpenGraph(editor, view, { url: cardInfo.url, from: cardInfo.from, to: cardInfo.to }, cardInfo.userText);
                 });
         });
-
-        // --- Пункт меню "Обновить через прокси" ---
-        if (this.context.fetchService.isProxyConfigured()) {
-            menu.addItem((item) => {
-                item
-                    .setTitle(t('updateCardProxy'))
-                    .setIcon('sync')
-                    .onClick(async () => {
-                        // Получаем HTML карточки до обновления
-                        const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
-                        // Извлекаем card-id для удаления заметки
-                        const cardId = extractCardId(cardHtml);
-                        // Очищаем локальные изображения
-                        await this.context.imageService.cleanupCardImages(cardHtml);
-                        // Удаляем заметку с изображениями
-                        if (cardId) {
-                            await this.context.imageNotesService.deleteNote(cardId);
-                        }
-                        // Создаём новую карточку
-                        await this.callbacks.replaceWithOpenGraph(editor, view, { url: cardInfo.url, from: cardInfo.from, to: cardInfo.to }, true, cardInfo.userText);
-                    });
-            });
-        }
 
         // --- Пункт меню "Удалить карточку" ---
         menu.addItem((item) => {
@@ -162,20 +139,9 @@ export class ContextMenuHandler {
                     .setTitle(t('loadCard'))
                     .setIcon('link')
                     .onClick(async () => {
-                        await this.callbacks.replaceWithOpenGraph(editor, view, urlInfo, false);
+                        await this.callbacks.replaceWithOpenGraph(editor, view, urlInfo);
                     });
             });
-
-            if (this.context.fetchService.isProxyConfigured()) {
-                menu.addItem((item) => {
-                    item
-                        .setTitle(t('loadCardProxy'))
-                        .setIcon('globe')
-                        .onClick(async () => {
-                            await this.callbacks.replaceWithOpenGraph(editor, view, urlInfo, true);
-                        });
-                });
-            }
         }
 
         // --- Логика для ссылки в буфере обмена ---
@@ -198,22 +164,9 @@ export class ContextMenuHandler {
                         .onClick(async () => {
                             const from = editor.getCursor('from');
                             const to = editor.getCursor('to');
-                            await this.callbacks.replaceWithOpenGraph(editor, view, { url: clipboardText, from, to }, false);
+                            await this.callbacks.replaceWithOpenGraph(editor, view, { url: clipboardText, from, to });
                         });
                 });
-
-                if (this.context.fetchService.isProxyConfigured()) {
-                    menu.addItem((item) => {
-                        item
-                            .setTitle(t('pasteCardProxy'))
-                            .setIcon('globe')
-                            .onClick(async () => {
-                                const from = editor.getCursor('from');
-                                const to = editor.getCursor('to');
-                                await this.callbacks.replaceWithOpenGraph(editor, view, { url: clipboardText, from, to }, true);
-                            });
-                    });
-                }
             }
         } catch (e) {
             console.error('Clipboard access error', e);
@@ -273,13 +226,11 @@ export class ContextMenuHandler {
         try {
             const cardId = extractCardId(cardHtml) || Date.now().toString();
             const sourcePath = view.file?.path || '';
-            const useProxy = false;
 
             const { result, updatedHtml } = await this.context.imageService.downloadCardImages(
                 cardHtml,
                 cardId,
-                sourcePath,
-                useProxy
+                sourcePath
             );
 
             if (result.downloadedCount > 0) {
