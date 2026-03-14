@@ -126,7 +126,7 @@ export function replaceImageInCard(
     newSrc: string,
     dataUrl?: string | null
 ): string {
-    const imgRegex = /<img([^>]*class="og-(?:image|screenshot)"[^>]*?)>/gi;
+    const imgRegex = /<img([^>]*class="og-(?:image|screenshot)"[^>]*?)\s*\/?>/gi;
     let currentIndex = 0;
 
     return html.replace(imgRegex, (fullMatch: string, attrs: string) => {
@@ -155,6 +155,9 @@ export function replaceImageInCard(
         }
         // Если dataUrl === undefined, оставляем как есть
 
-        return `<img${newAttrs}>`;
+        // Удаляем trailing пробелы и слеши, затем добавляем корректный закрывающий тег
+        newAttrs = newAttrs.replace(/\s*\/\s*$/, '').trimEnd();
+
+        return `<img${newAttrs} />`;
     });
 }
