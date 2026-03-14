@@ -304,6 +304,19 @@ export class ContextMenuHandler {
                 editor.replaceRange(updatedHtml, cardInfo.from, cardInfo.to);
                 // Синхронизируем заметку с изображениями
                 await this.context.imageNotesService.syncNote(cardId, updatedHtml);
+
+                // Регистрируем скачанные изображения в FileLinkService
+                const localImagePaths = this.extractLocalImagePaths(updatedHtml, cardId);
+                for (const imagePath of localImagePaths) {
+                    this.context.fileLinkService.addImage(cardId, imagePath);
+                }
+
+                // Триггерим событие о скачивании изображений
+                this.context.app.workspace.trigger('og-card-images-downloaded' as any, {
+                    cardId,
+                    imagePaths: localImagePaths
+                });
+
                 new Notice(t('imagesDownloaded', result.downloadedCount.toString()));
             } else {
                 new Notice(t('noImagesToDownload'));
@@ -332,6 +345,10 @@ export class ContextMenuHandler {
 
         try {
             const cardId = extractCardId(cardHtml);
+
+            // Получаем локальные пути изображений до восстановления
+            const localImagePaths = cardId ? this.extractLocalImagePaths(cardHtml, cardId) : [];
+
             const { result, updatedHtml } = await this.context.imageService.restoreCardImages(cardHtml);
 
             if (result.restoredCount > 0) {
@@ -339,7 +356,19 @@ export class ContextMenuHandler {
                 // Синхронизируем заметку (удалит заметку т.к. локальных изображений больше нет)
                 if (cardId) {
                     await this.context.imageNotesService.syncNote(cardId, updatedHtml);
+
+                    // Удаляем изображения из FileLinkService
+                    for (const imagePath of localImagePaths) {
+                        this.context.fileLinkService.removeImage(cardId, imagePath);
+                    }
                 }
+
+                // Триггерим событие о восстановлении URL
+                this.context.app.workspace.trigger('og-card-images-restored' as any, {
+                    cardId,
+                    restoredCount: result.restoredCount
+                });
+
                 new Notice(t('imagesRestored', result.restoredCount.toString()));
             } else {
                 new Notice(t('noImagesToRestore'));
@@ -354,5 +383,24 @@ export class ContextMenuHandler {
         } finally {
             notice.hide();
         }
+    }
+
+    /**
+     * Извлекает пути локальных изображений из HTML карточки
+     */
+    private extractLocalImagePaths(cardHtml: string, cardId: string): string[] {
+        const paths: string[] = [];
+        const imgRegex = /<img[^>]+src="([^"]+)"[^>]*>/g;
+        let match;
+
+        while ((match = imgRegex.exec(cardHtml)) !== null) {
+            const src = match[1];
+            // Локальные пути не начинаются с http:// или https://
+            if (src && !src.startsWith('http://') && !src.startsWith('https://')) {
+                paths.push(src);
+            }
+        }
+
+        return paths;
     }
 }

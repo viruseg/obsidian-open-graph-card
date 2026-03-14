@@ -1,8 +1,9 @@
 import { App } from 'obsidian';
-import { OpenGraphSettings } from '../types';
+import { OpenGraphSettings, FileLinksData } from '../types';
 import { FetchService } from '../services/FetchService';
 import { ImageService } from '../services/ImageService';
 import { ImageNotesService } from '../services/ImageNotesService';
+import { FileLinkService } from '../services/FileLinkService';
 
 /**
  * Dependency Injection контейнер для сервисов плагина
@@ -23,13 +24,22 @@ export class PluginContext {
     /** Сервис для управления заметками с изображениями карточек */
     readonly imageNotesService: ImageNotesService;
 
-    constructor(app: App, getSettings: () => OpenGraphSettings) {
+    /** Сервис для отслеживания связей между файлами */
+    readonly fileLinkService: FileLinkService;
+
+    constructor(
+        app: App,
+        getSettings: () => OpenGraphSettings,
+        getFileLinksData: () => FileLinksData,
+        saveFileLinksData: () => Promise<void>
+    ) {
         this.app = app;
         this.getSettings = getSettings;
 
         // Инициализация сервисов
         this.fetchService = new FetchService(getSettings);
         this.imageService = new ImageService(app, this.fetchService);
-        this.imageNotesService = new ImageNotesService(app, this.imageService);
+        this.fileLinkService = new FileLinkService(app, getFileLinksData, saveFileLinksData);
+        this.imageNotesService = new ImageNotesService(app, this.imageService, this.fileLinkService);
     }
 }

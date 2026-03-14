@@ -1,5 +1,6 @@
 import { App, TFile, TFolder } from 'obsidian';
 import { ImageService } from './ImageService';
+import { FileLinkService } from './FileLinkService';
 import { getImageDataUrlsFromCard } from '../utils/html';
 
 /**
@@ -13,10 +14,12 @@ export class ImageNotesService {
     /**
      * @param app - экземпляр приложения Obsidian
      * @param imageService - сервис для работы с изображениями
+     * @param fileLinkService - сервис для отслеживания связей между файлами
      */
     constructor(
         private app: App,
-        private imageService: ImageService
+        private imageService: ImageService,
+        private fileLinkService: FileLinkService
     ) {}
 
     /**
@@ -51,8 +54,14 @@ export class ImageNotesService {
                 await this.ensureNotesFolder();
                 await this.app.vault.create(notePath, content);
             }
+
+            // Регистрируем связи в FileLinkService
+            this.fileLinkService.setGeneratedNote(cardId, notePath);
+            for (const imagePath of localPaths) {
+                this.fileLinkService.addImage(cardId, imagePath);
+            }
         } catch (error) {
-            console.error('Error syncing image note:', error);
+            console.error('ImageNotesService: Error syncing image note:', error);
         }
     }
 
@@ -69,6 +78,9 @@ export class ImageNotesService {
             if (file instanceof TFile) {
                 await this.app.vault.delete(file);
             }
+
+            // Удаляем связь сгенерированной заметки
+            this.fileLinkService.clearGeneratedNote(cardId);
         } catch (error) {
             console.error('Error deleting image note:', error);
         }

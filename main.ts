@@ -1,6 +1,6 @@
-import { Plugin, Editor, MarkdownView, Notice, TFile } from 'obsidian';
+import { Plugin, Editor, MarkdownView, Notice, TFile, TAbstractFile, EventRef } from 'obsidian';
 import { t } from "./i18n";
-import { OpenGraphSettings, DEFAULT_SETTINGS } from './src/types';
+import { OpenGraphSettings, DEFAULT_SETTINGS, FileLinksData, FileDeletedEventData, FileRenamedEventData, CardLinks } from './src/types';
 import { PluginContext } from './src/core/PluginContext';
 import { parserRegistry } from './src/parsers';
 import { CardData, ScreenshotData } from './src/types';
@@ -8,17 +8,39 @@ import { ContextMenuHandler, CardInfo, UrlInfo } from './src/ui';
 import { SettingsTab } from './src/ui';
 import { HtmlBuilder, ImageData } from './src/builders';
 import { CARD_BOUNDS } from './src/utils/constants';
+import { extractCardId, getImageDataUrlsFromCard, replaceImageInCard } from './src/utils/html';
+
+/**
+ * Данные по умолчанию для связей файлов
+ */
+const DEFAULT_FILE_LINKS_DATA: FileLinksData = {
+    version: 1,
+    cardLinks: {}
+};
 
 export default class OpenGraphPlugin extends Plugin {
     settings: OpenGraphSettings;
+    private fileLinksData: FileLinksData = DEFAULT_FILE_LINKS_DATA;
     private context!: PluginContext;
     private contextMenuHandler!: ContextMenuHandler;
 
     async onload() {
         await this.loadSettings();
+        await this.loadFileLinksData();
 
         // Инициализация контекста с сервисами
-        this.context = new PluginContext(this.app, () => this.settings);
+        this.context = new PluginContext(
+            this.app,
+            () => this.settings,
+            () => this.fileLinksData,
+            this.saveFileLinksData.bind(this)
+        );
+
+        // Инициализация FileLinkService
+        this.context.fileLinkService.initialize();
+
+        // Подписка на события FileLinkService
+        this.registerFileLinkEvents();
 
         // Инициализация обработчика контекстного меню
         this.contextMenuHandler = new ContextMenuHandler(this.context, {
@@ -39,12 +61,229 @@ export default class OpenGraphPlugin extends Plugin {
         this.registerEvent(this.contextMenuHandler.createHandler());
     }
 
+    onunload() {
+        // Освобождаем ресурсы FileLinkService
+        if (this.context?.fileLinkService) {
+            this.context.fileLinkService.dispose();
+        }
+    }
+
     async loadSettings() {
         this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
     }
 
     async saveSettings() {
         await this.saveData(this.settings);
+    }
+
+    /**
+     * Загружает данные связей файлов из data.json
+     */
+    private async loadFileLinksData(): Promise<void> {
+        const data = await this.loadData();
+        if (data?.fileLinks) {
+            this.fileLinksData = {
+                version: data.fileLinks.version ?? 1,
+                cardLinks: data.fileLinks.cardLinks ?? {}
+            };
+        }
+    }
+
+    /**
+     * Возвращает текущие данные связей файлов
+     */
+    getFileLinksData(): FileLinksData {
+        return this.fileLinksData;
+    }
+
+    /**
+     * Сохраняет данные связей файлов в data.json
+     */
+    async saveFileLinksData(): Promise<void> {
+        const data = await this.loadData() ?? {};
+        data.fileLinks = this.context?.fileLinkService?.getSerializedData() ?? this.fileLinksData;
+        await this.saveData(data);
+    }
+
+    /**
+     * Подписывается на кастомные события от FileLinkService
+     */
+    private registerFileLinkEvents(): void {
+        // Событие удаления пользовательской заметки
+        this.registerEvent(this.app.workspace.on('og-card:user-note-deleted' as any, (data: FileDeletedEventData) => {
+            this.handleUserNoteDeleted(data);
+        }));
+
+        // Событие удаления сгенерированной заметки
+        this.registerEvent(this.app.workspace.on('og-card:generated-note-deleted' as any, (data: FileDeletedEventData) => {
+            this.handleGeneratedNoteDeleted(data);
+        }));
+
+        // Событие удаления изображения
+        this.registerEvent(this.app.workspace.on('og-card:image-deleted' as any, (data: FileDeletedEventData) => {
+            this.handleImageDeleted(data);
+        }));
+
+        // Событие переименования файла
+        this.registerEvent(this.app.workspace.on('og-card:file-renamed' as any, (data: FileRenamedEventData) => {
+            this.handleFileRenamed(data);
+        }));
+    }
+
+    /**
+     * Обрабатывает удаление пользовательской заметки
+     */
+    private async handleUserNoteDeleted(data: FileDeletedEventData): Promise<void> {
+        // Сначала удаляем связи, чтобы последующие события удаления файлов не обрабатывались
+        this.context.fileLinkService.unregisterCard(data.cardId);
+
+        // Удаляем сгенерированную заметку если она есть
+        if (data.cardLinks.generatedNotePath) {
+            const genNoteFile = this.app.vault.getAbstractFileByPath(data.cardLinks.generatedNotePath);
+            if (genNoteFile) {
+                try {
+                    await this.app.vault.trash(genNoteFile, true);
+                } catch (error) {
+                    console.error(`OpenGraphPlugin: Failed to delete generated note:`, error);
+                }
+            }
+        }
+
+        // Удаляем все локальные изображения
+        for (const imagePath of data.cardLinks.imagePaths) {
+            const imageFile = this.app.vault.getAbstractFileByPath(imagePath);
+            if (imageFile) {
+                try {
+                    await this.app.vault.trash(imageFile, true);
+                } catch (error) {
+                    // Игнорируем ошибку, если файл уже удалён
+                    if (!error.message?.includes('ENOENT')) {
+                        console.error(`OpenGraphPlugin: Failed to delete image:`, error);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Обрабатывает удаление сгенерированной заметки
+     */
+    private async handleGeneratedNoteDeleted(data: FileDeletedEventData): Promise<void> {
+        // Сначала удаляем связи, чтобы последующие события удаления файлов не обрабатывались
+        this.context.fileLinkService.unregisterCard(data.cardId);
+
+        // Удаляем все локальные изображения
+        for (const imagePath of data.cardLinks.imagePaths) {
+            const imageFile = this.app.vault.getAbstractFileByPath(imagePath);
+            if (imageFile) {
+                try {
+                    await this.app.vault.trash(imageFile, true);
+                } catch (error) {
+                    // Игнорируем ошибку, если файл уже удалён
+                    if (!error.message?.includes('ENOENT')) {
+                        console.error(`OpenGraphPlugin: Failed to delete image:`, error);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Обрабатывает удаление изображения
+     */
+    private async handleImageDeleted(data: FileDeletedEventData): Promise<void> {
+        console.log(`OpenGraphPlugin: Image deleted: ${data.deletedPath}`);
+
+        // 1. Удаляем изображение из связей
+        this.context.fileLinkService.removeImage(data.cardId, data.deletedPath);
+
+        // 2. Обновляем сгенерированную заметку (убираем ссылку на изображение)
+        if (data.cardLinks.generatedNotePath) {
+            const genNoteFile = this.app.vault.getAbstractFileByPath(data.cardLinks.generatedNotePath);
+            if (genNoteFile instanceof TFile) {
+                try {
+                    let content = await this.app.vault.read(genNoteFile);
+                    // Удаляем ссылку на изображение из заметки
+                    const imageLinkRegex = new RegExp(`!\\[\\^?[^\\]]*\\]\\(${this.escapeRegex(data.deletedPath)}\\)\\s*`, 'g');
+                    content = content.replace(imageLinkRegex, '');
+                    await this.app.vault.modify(genNoteFile, content);
+                    console.log(`OpenGraphPlugin: Updated generated note, removed image link`);
+                } catch (error) {
+                    console.error(`OpenGraphPlugin: Failed to update generated note:`, error);
+                }
+            }
+        }
+
+        // 3. Находим карточку в заметке пользователя и заменяем локальный путь на URL из data-url
+        await this.restoreImageUrlInCard(data);
+    }
+
+    /**
+     * Восстанавливает URL изображения в карточке из data-url атрибута
+     */
+    private async restoreImageUrlInCard(data: FileDeletedEventData): Promise<void> {
+        const userNotePath = data.cardLinks.userNotePath;
+        const userNoteFile = this.app.vault.getAbstractFileByPath(userNotePath);
+
+        if (!(userNoteFile instanceof TFile)) {
+            return;
+        }
+
+        try {
+            let content = await this.app.vault.read(userNoteFile);
+
+            // Ищем карточку по card-id
+            const cardRegex = new RegExp(
+                `(<div class="og-card[^"]*"\\s+card-id="${data.cardId}"[\\s\\S]*?<!--og-card-end ${data.cardId}-->\\s*</div>)`,
+                'i'
+            );
+
+            const cardMatch = content.match(cardRegex);
+            if (!cardMatch) {
+                console.log(`OpenGraphPlugin: Card ${data.cardId} not found in user note`);
+                return;
+            }
+
+            const cardHtml = cardMatch[1];
+
+            // Получаем информацию об изображениях с data-url
+            const imageDataUrls = getImageDataUrlsFromCard(cardHtml);
+
+            // Ищем изображение с удалённым путём
+            let updatedCardHtml = cardHtml;
+            for (const imgInfo of imageDataUrls) {
+                if (imgInfo.src === data.deletedPath && imgInfo.dataUrl) {
+                    // Заменяем локальный путь на URL из data-url
+                    updatedCardHtml = replaceImageInCard(updatedCardHtml, imgInfo.elementIndex, imgInfo.dataUrl);
+                    console.log(`OpenGraphPlugin: Restored image URL: ${imgInfo.dataUrl}`);
+                    break;
+                }
+            }
+
+            // Заменяем карточку в контенте
+            if (updatedCardHtml !== cardHtml) {
+                content = content.replace(cardRegex, updatedCardHtml);
+                await this.app.vault.modify(userNoteFile, content);
+                console.log(`OpenGraphPlugin: Updated card in user note`);
+            }
+        } catch (error) {
+            console.error(`OpenGraphPlugin: Failed to restore image URL in card:`, error);
+        }
+    }
+
+    /**
+     * Обрабатывает переименование файла
+     */
+    private handleFileRenamed(data: FileRenamedEventData): void {
+        console.log(`OpenGraphPlugin: File renamed: ${data.oldPath} -> ${data.newPath} (${data.fileType})`);
+        // Обновление путей происходит автоматически в FileLinkService.handleFileRename()
+    }
+
+    /**
+     * Экранирует специальные символы для использования в регулярном выражении
+     */
+    private escapeRegex(str: string): string {
+        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
     getCardUnderCursor(editor: Editor, targetLine?: number): CardInfo | null {
@@ -224,10 +463,31 @@ export default class OpenGraphPlugin extends Plugin {
             editor.setCursor(urlInfo.from);
             new Notice(t('cardCreated'));
 
+            // Регистрируем карточку в FileLinkService
+            this.context.fileLinkService.registerCard(cardId.toString(), sourcePath);
+
+            // Добавляем изображения в связи
+            if (imageData?.src && this.settings.saveImagesLocally) {
+                this.context.fileLinkService.addImage(cardId.toString(), imageData.src);
+            }
+            if (screenshotData) {
+                for (const s of screenshotData) {
+                    if (s.localPath) {
+                        this.context.fileLinkService.addImage(cardId.toString(), s.localPath);
+                    }
+                }
+            }
+
             // Синхронизируем заметку с изображениями если есть локальные изображения
             if (this.settings.saveImagesLocally) {
-                await this.context.imageNotesService.syncNote(cardId, htmlBlock);
+                await this.context.imageNotesService.syncNote(cardId.toString(), htmlBlock);
             }
+
+            // Триггерим событие о создании карточки
+            this.app.workspace.trigger('og-card-created' as any, {
+                cardId: cardId.toString(),
+                userNotePath: sourcePath
+            });
         } catch (error) {
             console.error(error);
             new Notice(t('loadingError', error.message));
@@ -320,5 +580,4 @@ export default class OpenGraphPlugin extends Plugin {
         // Устанавливаем курсор в начало карточки для предотвращения прыжков прокрутки
         editor.setCursor(cardInfo.from);
     }
-
 }

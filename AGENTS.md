@@ -20,42 +20,47 @@ flowchart TB
     
     subgraph Services
         E[FetchService]
-        F[ImageService]
-        G[ImageNotesService]
+        F[FileLinkService]
+        G[ImageService]
+        H[ImageNotesService]
     end
     
     subgraph Parsers
-        H[OpenGraphParser]
-        I[SteamParser]
-        J[ParserRegistry]
+        I[OpenGraphParser]
+        J[SteamParser]
+        K[ParserRegistry]
     end
     
     subgraph Builders
-        K[CardBuilder]
-        L[HtmlBuilder]
+        L[CardBuilder]
+        M[HtmlBuilder]
     end
     
     subgraph UI
-        M[ContextMenuHandler]
-        N[SettingsTab]
-        O[CardDescriptionModal]
+        N[ContextMenuHandler]
+        O[SettingsTab]
+        P[CardDescriptionModal]
     end
     
     subgraph Utils
-        P[editor.ts]
-        Q[html.ts]
-        R[constants.ts]
+        Q[editor.ts]
+        R[html.ts]
+        S[constants.ts]
     end
     
-    B --> M
-    M --> E
-    M --> F
-    M --> G
+    B --> N
+    N --> E
+    N --> F
+    N --> G
+    N --> H
     C --> E
     C --> F
     C --> G
-    E --> H
-    B --> L
+    C --> H
+    E --> I
+    B --> M
+    F --> G
+    F --> H
 ```
 
 ## Project Structure
@@ -66,13 +71,15 @@ src/
 │   ├── index.ts        # Re-exports all types
 │   ├── settings.ts     # OpenGraphSettings, DEFAULT_SETTINGS
 │   ├── card.ts         # CardData, CardInfo, UrlInfo, RatingData, ScreenshotData
-│   └── image.ts        # ImageSourceClassification, ImageDataUrlInfo, ImageDownloadResult, ImageRestoreResult
+│   ├── image.ts        # ImageSourceClassification, ImageDataUrlInfo, ImageDownloadResult, ImageRestoreResult
+│   └── fileLinks.ts    # CardLinks, FileLinkIndexes, FileLinksData, FileLinkInfo, FileDeletedEventData, FileRenamedEventData
 │
 ├── core/
 │   └── PluginContext.ts    # Dependency Injection container
 │
 ├── services/
 │   ├── FetchService.ts     # HTTP requests with proxy support
+│   ├── FileLinkService.ts  # File links tracking and events
 │   ├── ImageService.ts     # Image download, classification, cleanup
 │   └── ImageNotesService.ts # Image notes synchronization
 │
@@ -104,6 +111,7 @@ Dependency Injection container that holds:
 - `app: App` - Obsidian app instance
 - `getSettings: () => OpenGraphSettings` - Settings accessor
 - `fetchService: FetchService` - HTTP requests
+- `fileLinkService: FileLinkService` - File links tracking and events
 - `imageService: ImageService` - Image operations
 - `imageNotesService: ImageNotesService` - Image notes synchronization
 
@@ -111,6 +119,16 @@ Dependency Injection container that holds:
 - [`fetchHtml()`](src/services/FetchService.ts:44) - Fetch HTML content with optional proxy
 - [`fetchBinary()`](src/services/FetchService.ts:80) - Fetch binary data (images)
 - [`createAgent()`](src/services/FetchService.ts:17) - Creates proxy agent (HTTP/SOCKS5)
+
+### FileLinkService ([`src/services/FileLinkService.ts`](src/services/FileLinkService.ts))
+- [`registerCard()`](src/services/FileLinkService.ts:53) — Register card with user note path
+- [`setGeneratedNote()`](src/services/FileLinkService.ts:80) — Set generated note path
+- [`addImage()`](src/services/FileLinkService.ts:126) — Add image to card links
+- [`removeImage()`](src/services/FileLinkService.ts:144) — Remove image from card links
+- [`unregisterCard()`](src/services/FileLinkService.ts:162) — Remove card and all links
+- [`findFileLink()`](src/services/FileLinkService.ts:200) — Find card by file path
+- [`handleFileDelete()`](src/services/FileLinkService.ts:309) — Handle file deletion events
+- [`handleFileRename()`](src/services/FileLinkService.ts:342) — Handle file rename events
 
 ### ImageService ([`src/services/ImageService.ts`](src/services/ImageService.ts))
 - [`downloadAndSave()`](src/services/ImageService.ts:23) - Download and save image to vault
@@ -203,6 +221,33 @@ The [`ImageNotesService`](src/services/ImageNotesService.ts) maintains sync betw
 - Note created when card has local images
 - Note updated when images are added/removed
 - Note deleted when card is deleted or has no local images
+
+## File Links Architecture
+
+### Links Structure
+Each card can have the following links:
+- **User Note ↔ Card** — User's markdown file containing the card
+- **Generated Note ↔ Card** — Auto-generated note with image links (named `{card-id}.md`)
+- **Images ↔ Card** — Local image files downloaded from card
+
+### Event Flow
+1. **Card Created** → `registerCard(cardId, userNotePath)`
+2. **Images Downloaded** → `addImage(cardId, imagePath)` for each image
+3. **Generated Note Created** → `setGeneratedNote(cardId, notePath)`
+
+### File Deletion Handling
+- **User Note Deleted** → Delete generated note, remove all links
+- **Generated Note Deleted** → Delete all local images, remove all links
+- **Image Deleted** → Update generated note, replace local path with URL in card
+
+### Custom Events
+- `og-card-created` — Card created in user note
+- `og-card-images-downloaded` — Images downloaded to local storage
+- `og-card-images-restored` — Images restored to remote URLs
+- `og-card:user-note-deleted` — User note file deleted
+- `og-card:generated-note-deleted` — Generated note file deleted
+- `og-card:image-deleted` — Linked image file deleted
+- `og-card:file-renamed` — Linked file renamed
 
 ## Extension Points
 
