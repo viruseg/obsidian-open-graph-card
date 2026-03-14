@@ -112,6 +112,7 @@ export class ImageService {
      */
     classifyCardImageSources(cardHtml: string): { hasUrlImages: boolean; hasLocalImages: boolean } {
         const imageData = getImageDataUrlsFromCard(cardHtml);
+        const urlPattern = /^https?:\/\//i;
 
         let hasUrlImages = false;
         let hasLocalImages = false;
@@ -120,7 +121,7 @@ export class ImageService {
             if (img.dataUrl) {
                 // Изображение имеет data-url - это локальное изображение
                 hasLocalImages = true;
-            } else if (img.src.startsWith('https://') || img.src.startsWith('http://')) {
+            } else if (urlPattern.test(img.src)) {
                 // Изображение без data-url с URL - это удалённое изображение
                 hasUrlImages = true;
             }
@@ -142,6 +143,7 @@ export class ImageService {
         sourcePath: string
     ): Promise<{ result: ImageDownloadResult; updatedHtml: string }> {
         const imageData = getImageDataUrlsFromCard(cardHtml);
+        const urlPattern = /^https?:\/\//i;
         const errors: string[] = [];
         let downloadedCount = 0;
         let updatedHtml = cardHtml;
@@ -151,7 +153,7 @@ export class ImageService {
             if (img.dataUrl) continue;
 
             // Пропускаем не-URL изображения
-            if (!img.src.startsWith('https://') && !img.src.startsWith('http://')) continue;
+            if (!urlPattern.test(img.src)) continue;
 
             try {
                 const file = await this.downloadAndSave(img.src, `og-${cardId}`, sourcePath);
