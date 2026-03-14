@@ -32,6 +32,9 @@ export class FileLinkService {
     private deleteEventRef: EventRef | null = null;
     private renameEventRef: EventRef | null = null;
 
+    // Флаг массовой операции
+    private batchOperationInProgress: boolean = false;
+
     constructor(
         app: App,
         getData: () => FileLinksData,
@@ -40,6 +43,22 @@ export class FileLinkService {
         this.app = app;
         this.getData = getData;
         this.saveData = saveData;
+    }
+
+    // ========================================
+    // Методы управления массовыми операциями
+    // ========================================
+
+    startBatchOperation(): void {
+        this.batchOperationInProgress = true;
+    }
+
+    endBatchOperation(): void {
+        this.batchOperationInProgress = false;
+    }
+
+    isBatchOperationInProgress(): boolean {
+        return this.batchOperationInProgress;
     }
 
     // ========================================
@@ -330,6 +349,11 @@ export class FileLinkService {
                 this.app.workspace.trigger('og-card:generated-note-deleted', eventData);
                 break;
             case 'image':
+                // Пропускаем обработку отдельных изображений при массовой операции
+                if (this.batchOperationInProgress) {
+                    console.log('OpenGraphPlugin: Skipping image delete event during batch operation');
+                    return;
+                }
                 this.app.workspace.trigger('og-card:image-deleted', eventData);
                 break;
         }

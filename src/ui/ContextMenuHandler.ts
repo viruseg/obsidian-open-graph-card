@@ -282,7 +282,19 @@ export class ContextMenuHandler {
             // Получаем локальные пути изображений до восстановления
             const localImagePaths = cardId ? this.extractLocalImagePaths(cardHtml, cardId) : [];
 
-            const { result, updatedHtml } = await this.context.imageService.restoreCardImages(cardHtml);
+            // Начинаем массовую операцию
+            this.context.fileLinkService.startBatchOperation();
+
+            let result;
+            let updatedHtml: string;
+            try {
+                const restoreResult = await this.context.imageService.restoreCardImages(cardHtml);
+                result = restoreResult.result;
+                updatedHtml = restoreResult.updatedHtml;
+            } finally {
+                // Завершаем массовую операцию
+                this.context.fileLinkService.endBatchOperation();
+            }
 
             if (result.restoredCount > 0) {
                 editor.replaceRange(updatedHtml, cardInfo.from, cardInfo.to);

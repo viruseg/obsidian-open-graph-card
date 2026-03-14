@@ -190,6 +190,7 @@ export default class OpenGraphPlugin extends Plugin {
 
     /**
      * Обрабатывает удаление изображения
+     * Восстановление URL в карточке выполняется в handleRestoreImages через restoreCardImages()
      */
     private async handleImageDeleted(data: FileDeletedEventData): Promise<void> {
         console.log(`OpenGraphPlugin: Image deleted: ${data.deletedPath}`);
@@ -213,9 +214,10 @@ export default class OpenGraphPlugin extends Plugin {
                 }
             }
         }
-
-        // 3. Находим карточку в заметке пользователя и заменяем локальный путь на URL из data-url
-        await this.restoreImageUrlInCard(data);
+        // Примечание: Восстановление URL в карточке не выполняется здесь.
+        // При массовом удалении изображений (выгрузка) это делает handleRestoreImages через restoreCardImages().
+        // При одиночном удалении пользователем изображения через файловый менеджер -
+        // карточка сохраняет локальный путь (битая ссылка), что ожидаемое поведение.
     }
 
     /**
