@@ -88,7 +88,6 @@ export class ImageNotesService {
 
     /**
      * Удалить заметку карточки, если она пустая.
-     * Пустая заметка содержит только заголовок "# Images" или пуста.
      *
      * @param cardId - ID карточки
      * @returns true если заметка была удалена, false если заметка не пустая или не существует
@@ -121,15 +120,12 @@ export class ImageNotesService {
 
     /**
      * Проверить, является ли содержимое заметки пустым.
-     * Пустое содержимое - это только заголовок "# Images" или пустая строка.
      *
      * @param content - содержимое заметки (уже обрезанное)
      * @returns true если содержимое пустое
      */
     private isEmptyNoteContent(content: string): boolean {
-        return content === '' ||
-               content === '# Images' ||
-               content === '# Images\n';
+        return content.trim() === '';
     }
 
     /**
@@ -181,7 +177,7 @@ export class ImageNotesService {
      * @returns содержимое заметки в формате markdown
      */
     private createNoteContent(imagePaths: string[]): string {
-        const lines: string[] = ['# Images', ''];
+        const lines: string[] = [];
 
         for (const path of imagePaths) {
             lines.push(`![](${encodeURI(path)})`);
