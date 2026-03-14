@@ -351,7 +351,6 @@ export class FileLinkService {
             case 'image':
                 // Пропускаем обработку отдельных изображений при массовой операции
                 if (this.batchOperationInProgress) {
-                    console.log('OpenGraphPlugin: Skipping image delete event during batch operation');
                     return;
                 }
                 this.app.workspace.trigger('og-card:image-deleted', eventData);

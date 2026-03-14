@@ -224,8 +224,13 @@ export class ContextMenuHandler {
         const notice = new Notice(t('downloadingCardImages'), 0);
 
         try {
-            const cardId = extractCardId(cardHtml) || Date.now().toString();
+            const extractedCardId = extractCardId(cardHtml);
+            const cardId = extractedCardId || Date.now().toString();
             const sourcePath = view.file?.path || '';
+
+            // Проверяем, зарегистрирована ли карточка
+            const existingCardLinks = this.context.fileLinkService.getCardLinks(cardId);
+            const isRegistered = !!existingCardLinks;
 
             const { result, updatedHtml } = await this.context.imageService.downloadCardImages(
                 cardHtml,
@@ -235,16 +240,19 @@ export class ContextMenuHandler {
 
             if (result.downloadedCount > 0) {
                 editor.replaceRange(updatedHtml, cardInfo.from, cardInfo.to);
-                // Синхронизируем заметку с изображениями
-                await this.context.imageNotesService.syncNote(cardId, updatedHtml);
 
-                // Регистрируем скачанные изображения в FileLinkService
-                const localImagePaths = this.extractLocalImagePaths(updatedHtml, cardId);
-                for (const imagePath of localImagePaths) {
-                    this.context.fileLinkService.addImage(cardId, imagePath);
+                // Регистрируем карточку в FileLinkService если она ещё не зарегистрирована
+                // Это должно происходить ДО вызова syncNote, т.к. syncNote вызывает setGeneratedNote и addImage
+                if (!isRegistered) {
+                    this.context.fileLinkService.registerCard(cardId, sourcePath);
                 }
 
+                // Синхронизируем заметку с изображениями
+                // syncNote сам вызовет setGeneratedNote и addImage для каждого изображения
+                await this.context.imageNotesService.syncNote(cardId, updatedHtml);
+
                 // Триггерим событие о скачивании изображений
+                const localImagePaths = this.extractLocalImagePaths(updatedHtml, cardId);
                 this.context.app.workspace.trigger('og-card-images-downloaded' as any, {
                     cardId,
                     imagePaths: localImagePaths
@@ -279,10 +287,7 @@ export class ContextMenuHandler {
         try {
             const cardId = extractCardId(cardHtml);
 
-            // Получаем локальные пути изображений до восстановления
-            const localImagePaths = cardId ? this.extractLocalImagePaths(cardHtml, cardId) : [];
-
-            // Начинаем массовую операцию
+            // Начинаем массовую операцию (предотвращает обработку событий удаления отдельных изображений)
             this.context.fileLinkService.startBatchOperation();
 
             let result;
@@ -298,14 +303,13 @@ export class ContextMenuHandler {
 
             if (result.restoredCount > 0) {
                 editor.replaceRange(updatedHtml, cardInfo.from, cardInfo.to);
-                // Синхронизируем заметку (удалит заметку т.к. локальных изображений больше нет)
+
+                // Синхронизируем заметку с изображениями
+                // syncNote удалит заметку, т.к. локальных изображений больше нет
+                // При удалении заметки сработает событие og-card:generated-note-deleted,
+                // которое вызовет unregisterCard и очистит все связи
                 if (cardId) {
                     await this.context.imageNotesService.syncNote(cardId, updatedHtml);
-
-                    // Удаляем изображения из FileLinkService
-                    for (const imagePath of localImagePaths) {
-                        this.context.fileLinkService.removeImage(cardId, imagePath);
-                    }
                 }
 
                 // Триггерим событие о восстановлении URL
