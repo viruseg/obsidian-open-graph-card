@@ -94,7 +94,6 @@ export class ContextMenuHandler {
                     // Удаляем заметку с изображениями (только если она пустая)
                     if (cardId) {
                         await this.context.imageNotesService.deleteNote(cardId);
-                        await this.context.imageNotesService.deleteNoteIfEmpty(cardId);
                     }
                     // Заменяем карточку на URL
                     const replacement = cardInfo.url + (cardInfo.userText ? '\n' + cardInfo.userText : '');

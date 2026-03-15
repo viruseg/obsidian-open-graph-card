@@ -84,6 +84,8 @@ export class ImageNotesService {
         } catch (error) {
             console.error('Error deleting image note:', error);
         }
+
+        await this.deleteNoteIfEmpty(cardId);
     }
 
     /**
