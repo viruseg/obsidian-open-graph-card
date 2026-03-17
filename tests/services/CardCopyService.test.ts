@@ -59,7 +59,9 @@ const createMockFileLinkService = (): any => ({
   getCardLinks: jest.fn(),
   addImage: jest.fn(),
   hasUserNotes: jest.fn(),
-  unregisterCard: jest.fn()
+  unregisterCard: jest.fn(),
+  removeUserNote: jest.fn(),
+  addUserNote: jest.fn()
 });
 
 const createMockImageService = (): any => ({
@@ -147,6 +149,23 @@ describe('CardCopyService', () => {
       );
     });
 
+    it('should register editor-cut listener', () => {
+      const service = new CardCopyService(
+        mockApp,
+        mockFileLinkService,
+        mockImageService,
+        mockImageNotesService
+      );
+
+      service.initialize();
+
+      expect(mockApp.workspace.on).toHaveBeenCalledWith(
+        'editor-cut',
+        expect.any(Function),
+        service
+      );
+    });
+
     it('should return EventRef from workspace.on', () => {
       const service = new CardCopyService(
         mockApp,
@@ -157,8 +176,8 @@ describe('CardCopyService', () => {
 
       service.initialize();
 
-      // Проверяем что on был вызван и вернул EventRef
-      expect(mockApp.workspace.on).toHaveBeenCalledTimes(2);
+      // Проверяем что on был вызван 3 раза (editor-change, editor-paste, editor-cut)
+      expect(mockApp.workspace.on).toHaveBeenCalledTimes(3);
     });
   });
 
@@ -177,7 +196,7 @@ describe('CardCopyService', () => {
       service.initialize();
       service.destroy();
 
-      expect(mockApp.workspace.offref).toHaveBeenCalledTimes(2);
+      expect(mockApp.workspace.offref).toHaveBeenCalledTimes(3);
     });
 
     it('should be safe to call destroy without initialize', () => {
@@ -204,7 +223,7 @@ describe('CardCopyService', () => {
       service.destroy();
       service.destroy();
 
-      expect(mockApp.workspace.offref).toHaveBeenCalledTimes(2);
+      expect(mockApp.workspace.offref).toHaveBeenCalledTimes(3);
     });
   });
 
@@ -268,9 +287,10 @@ describe('CardCopyService', () => {
 
       // Проверяем что обработчики были сохранены
       const calls = mockApp.workspace.on.mock.calls;
-      expect(calls.length).toBe(2);
+      expect(calls.length).toBe(3);
       expect(calls[0][0]).toBe('editor-change');
       expect(calls[1][0]).toBe('editor-paste');
+      expect(calls[2][0]).toBe('editor-cut');
     });
 
     it('should clear event refs on destroy', () => {
@@ -285,39 +305,7 @@ describe('CardCopyService', () => {
       service.destroy();
 
       // После destroy offref должен быть вызван для каждого события
-      expect(mockApp.workspace.offref).toHaveBeenCalledTimes(2);
-    });
-  });
-
-  // ========================================
-  // Тесты для copyImage (через моки)
-  // ========================================
-  describe('copyImage functionality', () => {
-    it('should have access to vault methods', () => {
-      const service = new CardCopyService(
-        mockApp,
-        mockFileLinkService,
-        mockImageService,
-        mockImageNotesService
-      );
-
-      // Проверяем что мок имеет нужные методы
-      expect(mockApp.vault.getAbstractFileByPath).toBeDefined();
-      expect(mockApp.vault.readBinary).toBeDefined();
-      expect(mockApp.vault.create).toBeDefined();
-      expect(mockApp.vault.createFolder).toBeDefined();
-    });
-
-    it('should have getConfig mock returning default value', () => {
-      const service = new CardCopyService(
-        mockApp,
-        mockFileLinkService,
-        mockImageService,
-        mockImageNotesService
-      );
-
-      const config = mockApp.vault.getConfig('attachmentFolderPath');
-      expect(config).toBe('/');
+      expect(mockApp.workspace.offref).toHaveBeenCalledTimes(3);
     });
   });
 
@@ -463,63 +451,6 @@ describe('CardCopyService', () => {
   });
 
   // ========================================
-  // Тесты для vault operations
-  // ========================================
-  describe('vault operations', () => {
-    it('should handle file existence check', () => {
-      const mockFile = createMockTFile('existing-file.md');
-      mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
-
-      const file = mockApp.vault.getAbstractFileByPath('existing-file.md');
-
-      expect(file).toBeDefined();
-    });
-
-    it('should handle missing file', () => {
-      mockApp.vault.getAbstractFileByPath.mockReturnValue(null);
-
-      const file = mockApp.vault.getAbstractFileByPath('missing-file.md');
-
-      expect(file).toBeNull();
-    });
-
-    it('should handle folder existence check', () => {
-      const mockFolder = createMockTFolder('open-graph-card');
-      mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFolder);
-
-      const folder = mockApp.vault.getAbstractFileByPath('open-graph-card');
-
-      expect(folder).toBeDefined();
-      expect((folder as TFolder).isRoot).toBeDefined();
-    });
-
-    it('should handle binary file reading', async () => {
-      const binaryData = new ArrayBuffer(10);
-      mockApp.vault.readBinary.mockResolvedValue(binaryData);
-
-      const result = await mockApp.vault.readBinary('image.png');
-
-      expect(result).toBe(binaryData);
-    });
-
-    it('should handle file creation', async () => {
-      mockApp.vault.create.mockResolvedValue(undefined);
-
-      await mockApp.vault.create('new-file.md', 'content');
-
-      expect(mockApp.vault.create).toHaveBeenCalledWith('new-file.md', 'content');
-    });
-
-    it('should handle folder creation', async () => {
-      mockApp.vault.createFolder.mockResolvedValue(undefined);
-
-      await mockApp.vault.createFolder('new-folder');
-
-      expect(mockApp.vault.createFolder).toHaveBeenCalledWith('new-folder');
-    });
-  });
-
-  // ========================================
   // Тесты для card detection regex
   // ========================================
   describe('card detection', () => {
@@ -568,29 +499,6 @@ describe('CardCopyService', () => {
   });
 
   // ========================================
-  // Тесты для error handling
-  // ========================================
-  describe('error handling', () => {
-    it('should handle vault.create rejection', async () => {
-      mockApp.vault.create.mockRejectedValue(new Error('Create failed'));
-
-      await expect(mockApp.vault.create('test.md', 'content')).rejects.toThrow('Create failed');
-    });
-
-    it('should handle vault.readBinary rejection', async () => {
-      mockApp.vault.readBinary.mockRejectedValue(new Error('Read failed'));
-
-      await expect(mockApp.vault.readBinary('test.png')).rejects.toThrow('Read failed');
-    });
-
-    it('should handle vault.createFolder rejection', async () => {
-      mockApp.vault.createFolder.mockRejectedValue(new Error('Folder exists'));
-
-      await expect(mockApp.vault.createFolder('existing')).rejects.toThrow('Folder exists');
-    });
-  });
-
-  // ========================================
   // Тесты для lifecycle
   // ========================================
   describe('lifecycle', () => {
@@ -605,8 +513,8 @@ describe('CardCopyService', () => {
       service.initialize();
       service.destroy();
 
-      expect(mockApp.workspace.on).toHaveBeenCalledTimes(2);
-      expect(mockApp.workspace.offref).toHaveBeenCalledTimes(2);
+      expect(mockApp.workspace.on).toHaveBeenCalledTimes(3);
+      expect(mockApp.workspace.offref).toHaveBeenCalledTimes(3);
     });
 
     it('should support re-initialization after destroy', () => {
@@ -626,7 +534,7 @@ describe('CardCopyService', () => {
 
       service.initialize();
 
-      expect(mockApp.workspace.on).toHaveBeenCalledTimes(2);
+      expect(mockApp.workspace.on).toHaveBeenCalledTimes(3);
     });
 
     it('should handle multiple destroy calls gracefully', () => {
@@ -643,15 +551,15 @@ describe('CardCopyService', () => {
       service.destroy();
 
       // После первого destroy последующие не должны добавлять вызовы offref
-      expect(mockApp.workspace.offref).toHaveBeenCalledTimes(2);
+      expect(mockApp.workspace.offref).toHaveBeenCalledTimes(3);
     });
   });
 
   // ========================================
-  // Тесты для копирования в той же заметке
+  // Тесты для позиционного определения копий
   // ========================================
-  describe('copy in same note', () => {
-    it('should process card copy in same note (not ignore it)', async () => {
+  describe('positional copy detection', () => {
+    it('should keep original card-id for first card when two cards with same ID exist', async () => {
       const service = new CardCopyService(
         mockApp,
         mockFileLinkService,
@@ -659,7 +567,6 @@ describe('CardCopyService', () => {
         mockImageNotesService
       );
 
-      // Настраиваем моки
       const mockFile = createMockTFile('same-note.md');
       mockApp.workspace.getActiveFile.mockReturnValue(mockFile);
 
@@ -670,24 +577,36 @@ describe('CardCopyService', () => {
         imagePaths: new Set()
       });
 
-      (extractCardId as jest.Mock).mockReturnValue('og_existing_card');
-      (getImageDataUrlsFromCard as jest.Mock).mockReturnValue([]);
-      (generateCardId as jest.Mock).mockReturnValue('og_new_card_123');
+      const originalCardId = 'og_original';
+      const newCardId = 'og_copy_12345';
 
-      // Создаём мок редактора
+      // Мокаем extractCardId чтобы возвращать одинаковый ID для обеих карточек
+      let callCount = 0;
+      (extractCardId as jest.Mock).mockImplementation(() => {
+        callCount++;
+        return originalCardId;
+      });
+
+      (getImageDataUrlsFromCard as jest.Mock).mockReturnValue([]);
+      (generateCardId as jest.Mock).mockReturnValue(newCardId);
+
+      // Две карточки с одинаковым ID
+      const cardHtml = `<div class="og-card" card-id="${originalCardId}">content<!--og-card-end ${originalCardId}--></div>`;
+      const twoCards = cardHtml + '\n' + cardHtml;
+
       const mockEditor = {
-        getValue: jest.fn().mockReturnValue('<div class="og-card" card-id="og_existing_card">content<!--og-card-end og_existing_card--></div>'),
+        getValue: jest.fn().mockReturnValue(twoCards),
         setValue: jest.fn()
       };
 
-      // Вызываем обработку
       await service['processCardsInEditor'](mockEditor as any, 'same-note.md');
 
-      // Должен быть вызван registerCard для новой карточки
-      expect(mockFileLinkService.registerCard).toHaveBeenCalledWith('og_new_card_123', 'same-note.md');
+      // Должен быть вызван registerCard только один раз (для копии)
+      expect(mockFileLinkService.registerCard).toHaveBeenCalledTimes(1);
+      expect(mockFileLinkService.registerCard).toHaveBeenCalledWith(newCardId, 'same-note.md');
     });
 
-    it('should generate new card-id when copying in same note', async () => {
+    it('should process all cards when copying from another note', async () => {
       const service = new CardCopyService(
         mockApp,
         mockFileLinkService,
@@ -695,40 +614,36 @@ describe('CardCopyService', () => {
         mockImageNotesService
       );
 
-      const mockFile = createMockTFile('same-note.md');
+      const mockFile = createMockTFile('target-note.md');
       mockApp.workspace.getActiveFile.mockReturnValue(mockFile);
 
+      // Карточка существует в другой заметке
       mockFileLinkService.getCardLinks.mockReturnValue({
-        userNotePaths: ['same-note.md'],
+        userNotePaths: ['source-note.md'],
         generatedNotePath: null,
         imagePaths: new Set()
       });
 
-      const oldCardId = 'og_original';
-      const newCardId = 'og_copy_12345';
+      const originalCardId = 'og_from_other';
+      const newCardId = 'og_copy_other';
 
-      (extractCardId as jest.Mock).mockReturnValue(oldCardId);
+      (extractCardId as jest.Mock).mockReturnValue(originalCardId);
       (getImageDataUrlsFromCard as jest.Mock).mockReturnValue([]);
       (generateCardId as jest.Mock).mockReturnValue(newCardId);
 
-      const originalHtml = `<div class="og-card" card-id="${oldCardId}">content<!--og-card-end ${oldCardId}--></div>`;
+      const cardHtml = `<div class="og-card" card-id="${originalCardId}">content<!--og-card-end ${originalCardId}--></div>`;
       const mockEditor = {
-        getValue: jest.fn().mockReturnValue(originalHtml),
+        getValue: jest.fn().mockReturnValue(cardHtml),
         setValue: jest.fn()
       };
 
-      await service['processCardsInEditor'](mockEditor as any, 'same-note.md');
+      await service['processCardsInEditor'](mockEditor as any, 'target-note.md');
 
-      // Проверяем что был сгенерирован новый ID
-      expect(generateCardId).toHaveBeenCalled();
-
-      // Проверяем что HTML был обновлён с новым ID
-      const setValueCall = mockEditor.setValue.mock.calls[0][0];
-      expect(setValueCall).toContain(`card-id="${newCardId}"`);
-      expect(setValueCall).toContain(`<!--og-card-end ${newCardId}-->`);
+      // Должен быть вызван registerCard для новой карточки
+      expect(mockFileLinkService.registerCard).toHaveBeenCalledWith(newCardId, 'target-note.md');
     });
 
-    it('should add image links when copying card with images in same note', async () => {
+    it('should not modify single existing card in same note', async () => {
       const service = new CardCopyService(
         mockApp,
         mockFileLinkService,
@@ -736,36 +651,217 @@ describe('CardCopyService', () => {
         mockImageNotesService
       );
 
-      const mockFile = createMockTFile('same-note.md');
+      const mockFile = createMockTFile('single-card-note.md');
       mockApp.workspace.getActiveFile.mockReturnValue(mockFile);
 
       mockFileLinkService.getCardLinks.mockReturnValue({
-        userNotePaths: ['same-note.md'],
+        userNotePaths: ['single-card-note.md'],
+        generatedNotePath: null,
+        imagePaths: new Set()
+      });
+
+      const existingCardId = 'og_existing_single';
+
+      (extractCardId as jest.Mock).mockReturnValue(existingCardId);
+      (getImageDataUrlsFromCard as jest.Mock).mockReturnValue([]);
+
+      const cardHtml = `<div class="og-card" card-id="${existingCardId}">content<!--og-card-end ${existingCardId}--></div>`;
+      const mockEditor = {
+        getValue: jest.fn().mockReturnValue(cardHtml),
+        setValue: jest.fn()
+      };
+
+      await service['processCardsInEditor'](mockEditor as any, 'single-card-note.md');
+
+      // Не должен быть вызван registerCard (карточка уже существует)
+      // Не должен быть вызван generateCardId (нет копии)
+      expect(mockFileLinkService.registerCard).not.toHaveBeenCalled();
+      expect(generateCardId).not.toHaveBeenCalled();
+    });
+  });
+
+  // ========================================
+  // Тесты для cut/paste операций
+  // ========================================
+  describe('cut/paste operations', () => {
+    it('should track cut card-id', () => {
+      const service = new CardCopyService(
+        mockApp,
+        mockFileLinkService,
+        mockImageService,
+        mockImageNotesService
+      );
+
+      service.initialize();
+
+      const mockFile = createMockTFile('source-note.md');
+      mockApp.workspace.getActiveFile.mockReturnValue(mockFile);
+
+      const cardId = 'og_cut_card';
+      const cardHtml = `<div class="og-card" card-id="${cardId}">content<!--og-card-end ${cardId}--></div>`;
+
+      (extractCardId as jest.Mock).mockReturnValue(cardId);
+
+      // Получаем обработчик cut
+      const cutHandler = mockApp.workspace.on.mock.calls.find(
+        (call: any[]) => call[0] === 'editor-cut'
+      )?.[1];
+
+      const mockClipboardEvent = {
+        clipboardData: null
+      } as any;
+
+      const mockEditor = {
+        getSelection: jest.fn().mockReturnValue(cardHtml)
+      } as any;
+
+      // Вызываем обработчик cut с правильным контекстом
+      if (cutHandler) {
+        cutHandler.call(service, mockClipboardEvent, mockEditor);
+      }
+
+      // Проверяем что card-id был добавлен в cutCardIds (косвенно через поведение)
+      expect(extractCardId).toHaveBeenCalledWith(cardHtml);
+    });
+
+    it('should handle cut then paste in same note', async () => {
+      const service = new CardCopyService(
+        mockApp,
+        mockFileLinkService,
+        mockImageService,
+        mockImageNotesService
+      );
+
+      const mockFile = createMockTFile('cut-paste-note.md');
+      mockApp.workspace.getActiveFile.mockReturnValue(mockFile);
+
+      mockFileLinkService.getCardLinks.mockReturnValue({
+        userNotePaths: ['cut-paste-note.md'],
+        generatedNotePath: null,
+        imagePaths: new Set()
+      });
+
+      const originalCardId = 'og_cut_original';
+      const newCardId = 'og_cut_new';
+
+      (extractCardId as jest.Mock).mockReturnValue(originalCardId);
+      (getImageDataUrlsFromCard as jest.Mock).mockReturnValue([]);
+      (generateCardId as jest.Mock).mockReturnValue(newCardId);
+
+      // Симулируем что карточка была вырезана
+      service['cutCardIds'].add(originalCardId);
+
+      // Одна карточка (вставленная после cut)
+      const cardHtml = `<div class="og-card" card-id="${originalCardId}">content<!--og-card-end ${originalCardId}--></div>`;
+      const mockEditor = {
+        getValue: jest.fn().mockReturnValue(cardHtml),
+        setValue: jest.fn()
+      };
+
+      await service['processCardsInEditor'](mockEditor as any, 'cut-paste-note.md');
+
+      // Должен быть вызван registerCard для новой карточки
+      expect(mockFileLinkService.registerCard).toHaveBeenCalledWith(newCardId, 'cut-paste-note.md');
+    });
+  });
+
+  // ========================================
+  // Тесты для множественного копирования
+  // ========================================
+  describe('multiple copy operations', () => {
+    it('should handle multiple paste operations sequentially', async () => {
+      const service = new CardCopyService(
+        mockApp,
+        mockFileLinkService,
+        mockImageService,
+        mockImageNotesService
+      );
+
+      const mockFile = createMockTFile('multi-paste-note.md');
+      mockApp.workspace.getActiveFile.mockReturnValue(mockFile);
+
+      mockFileLinkService.getCardLinks.mockReturnValue({
+        userNotePaths: ['multi-paste-note.md'],
+        generatedNotePath: null,
+        imagePaths: new Set()
+      });
+
+      const originalCardId = 'og_multi_original';
+      const firstCopyId = 'og_multi_copy1';
+      const secondCopyId = 'og_multi_copy2';
+
+      (extractCardId as jest.Mock).mockReturnValue(originalCardId);
+      (getImageDataUrlsFromCard as jest.Mock).mockReturnValue([]);
+      (generateCardId as jest.Mock)
+        .mockReturnValueOnce(firstCopyId)
+        .mockReturnValueOnce(secondCopyId);
+
+      // Первая вставка - 2 карточки с одинаковым ID
+      const cardHtml = `<div class="og-card" card-id="${originalCardId}">content<!--og-card-end ${originalCardId}--></div>`;
+      const twoCards = cardHtml + '\n' + cardHtml;
+
+      const mockEditor = {
+        getValue: jest.fn().mockReturnValue(twoCards),
+        setValue: jest.fn()
+      };
+
+      await service['processCardsInEditor'](mockEditor as any, 'multi-paste-note.md');
+
+      // Должен быть вызван registerCard для первой копии
+      expect(mockFileLinkService.registerCard).toHaveBeenCalledWith(firstCopyId, 'multi-paste-note.md');
+    });
+  });
+
+  // ========================================
+  // Тесты для копирования с изображениями
+  // ========================================
+  describe('copy with images', () => {
+    it('should add image links when copying card with images', async () => {
+      const service = new CardCopyService(
+        mockApp,
+        mockFileLinkService,
+        mockImageService,
+        mockImageNotesService
+      );
+
+      const mockFile = createMockTFile('image-note.md');
+      mockApp.workspace.getActiveFile.mockReturnValue(mockFile);
+
+      mockFileLinkService.getCardLinks.mockReturnValue({
+        userNotePaths: ['image-note.md'],
         generatedNotePath: null,
         imagePaths: new Set(['open-graph-card/image1.png'])
       });
 
-      (extractCardId as jest.Mock).mockReturnValue('og_with_images');
-      (generateCardId as jest.Mock).mockReturnValue('og_copy_with_images');
+      const originalCardId = 'og_with_images';
+      const newCardId = 'og_copy_images';
+
+      (extractCardId as jest.Mock).mockReturnValue(originalCardId);
+      // Сбрасываем мок и устанавливаем новое значение
+      (generateCardId as jest.Mock).mockReset();
+      (generateCardId as jest.Mock).mockReturnValue(newCardId);
 
       // Мокаем изображения - локальное изображение
       (getImageDataUrlsFromCard as jest.Mock).mockReturnValue([
         { src: 'open-graph-card/image1.png', dataUrl: 'app://local/image1.png', elementIndex: 0 }
       ]);
 
-      const originalHtml = `<div class="og-card" card-id="og_with_images"><img src="open-graph-card/image1.png" /><!--og-card-end og_with_images--></div>`;
+      // Две карточки с одинаковым ID
+      const cardHtml = `<div class="og-card" card-id="${originalCardId}"><img src="open-graph-card/image1.png" /><!--og-card-end ${originalCardId}--></div>`;
+      const twoCards = cardHtml + '\n' + cardHtml;
+
       const mockEditor = {
-        getValue: jest.fn().mockReturnValue(originalHtml),
+        getValue: jest.fn().mockReturnValue(twoCards),
         setValue: jest.fn()
       };
 
-      await service['processCardsInEditor'](mockEditor as any, 'same-note.md');
+      await service['processCardsInEditor'](mockEditor as any, 'image-note.md');
 
       // Проверяем что изображение было добавлено в связи новой карточки
-      expect(mockFileLinkService.addImage).toHaveBeenCalledWith('og_copy_with_images', 'open-graph-card/image1.png');
+      expect(mockFileLinkService.addImage).toHaveBeenCalledWith(newCardId, 'open-graph-card/image1.png');
     });
 
-    it('should sync image notes when copying card with images in same note', async () => {
+    it('should sync image notes when copying card with images', async () => {
       const service = new CardCopyService(
         mockApp,
         mockFileLinkService,
@@ -773,32 +869,74 @@ describe('CardCopyService', () => {
         mockImageNotesService
       );
 
-      const mockFile = createMockTFile('same-note.md');
+      const mockFile = createMockTFile('sync-note.md');
       mockApp.workspace.getActiveFile.mockReturnValue(mockFile);
 
       mockFileLinkService.getCardLinks.mockReturnValue({
-        userNotePaths: ['same-note.md'],
+        userNotePaths: ['sync-note.md'],
         generatedNotePath: 'open-graph-card/og_with_images.md',
         imagePaths: new Set(['open-graph-card/image1.png'])
       });
 
-      (extractCardId as jest.Mock).mockReturnValue('og_with_images');
-      (generateCardId as jest.Mock).mockReturnValue('og_copy_sync');
+      const originalCardId = 'og_sync_images';
+      const newCardId = 'og_sync_copy';
+
+      (extractCardId as jest.Mock).mockReturnValue(originalCardId);
+      (generateCardId as jest.Mock).mockReturnValue(newCardId);
 
       (getImageDataUrlsFromCard as jest.Mock).mockReturnValue([
         { src: 'open-graph-card/image1.png', dataUrl: 'app://local/image1.png', elementIndex: 0 }
       ]);
 
-      const originalHtml = `<div class="og-card" card-id="og_with_images"><img src="open-graph-card/image1.png" /><!--og-card-end og_with_images--></div>`;
+      // Две карточки с одинаковым ID
+      const cardHtml = `<div class="og-card" card-id="${originalCardId}"><img src="open-graph-card/image1.png" /><!--og-card-end ${originalCardId}--></div>`;
+      const twoCards = cardHtml + '\n' + cardHtml;
+
       const mockEditor = {
-        getValue: jest.fn().mockReturnValue(originalHtml),
+        getValue: jest.fn().mockReturnValue(twoCards),
         setValue: jest.fn()
       };
 
-      await service['processCardsInEditor'](mockEditor as any, 'same-note.md');
+      await service['processCardsInEditor'](mockEditor as any, 'sync-note.md');
 
       // Проверяем что была вызвана синхронизация заметки
       expect(mockImageNotesService.syncNote).toHaveBeenCalled();
+    });
+  });
+
+  // ========================================
+  // Тесты для новых карточек
+  // ========================================
+  describe('new card registration', () => {
+    it('should register new card when it does not exist in system', async () => {
+      const service = new CardCopyService(
+        mockApp,
+        mockFileLinkService,
+        mockImageService,
+        mockImageNotesService
+      );
+
+      const mockFile = createMockTFile('new-card-note.md');
+      mockApp.workspace.getActiveFile.mockReturnValue(mockFile);
+
+      // Карточка не существует
+      mockFileLinkService.getCardLinks.mockReturnValue(null);
+
+      const newCardId = 'og_brand_new';
+
+      (extractCardId as jest.Mock).mockReturnValue(newCardId);
+      (getImageDataUrlsFromCard as jest.Mock).mockReturnValue([]);
+
+      const cardHtml = `<div class="og-card" card-id="${newCardId}">content<!--og-card-end ${newCardId}--></div>`;
+      const mockEditor = {
+        getValue: jest.fn().mockReturnValue(cardHtml),
+        setValue: jest.fn()
+      };
+
+      await service['processCardsInEditor'](mockEditor as any, 'new-card-note.md');
+
+      // Должен быть вызван registerCard для новой карточки
+      expect(mockFileLinkService.registerCard).toHaveBeenCalledWith(newCardId, 'new-card-note.md');
     });
   });
 });
