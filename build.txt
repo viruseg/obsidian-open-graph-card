@@ -3,3 +3,6 @@ npm install obsidian typescript esbuild --save-dev
 npm install node-fetch@2 https-proxy-agent socks-proxy-agent
 npm install --save-dev @types/node-fetch@2
 npm run build
+
+npm test — запуск тестов
+npm run test:coverage — тесты с отчётом покрытия

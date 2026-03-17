@@ -6,7 +6,8 @@ import {
     FileLinksData,
     FileLinkInfo,
     FileDeletedEventData,
-    FileRenamedEventData
+    FileRenamedEventData,
+    UserNoteEventData
 } from '../types';
 
 /**
@@ -25,7 +26,7 @@ export class FileLinkService {
     private indexes: FileLinkIndexes = {
         userNoteToCard: new Map(),
         generatedNoteToCard: new Map(),
-        imageToCard: new Map()
+        imageToCards: new Map()
     };
 
     // Ссылки на подписки событий
@@ -66,19 +67,24 @@ export class FileLinkService {
     // ========================================
 
     /**
-     * Регистрирует новую карточку с путём к заметке пользователя.
+     * Регистрирует новую карточку с путём(ями) к заметке пользователя.
      * Создаёт пустой CardLinks с generatedNotePath: null и пустым Set изображений.
+     * @param cardId - уникальный идентификатор карточки
+     * @param userNotePaths - путь или массив путей к заметкам пользователя
      */
-    registerCard(cardId: string, userNotePath: string): void {
+    registerCard(cardId: string, userNotePaths: string | string[]): void {
         // Проверяем, не зарегистрирована ли уже карточка
         if (this.cardLinksMap.has(cardId)) {
             console.warn(`FileLinkService: Card ${cardId} already registered`);
             return;
         }
 
+        // Нормализуем в массив
+        const paths = Array.isArray(userNotePaths) ? userNotePaths : [userNotePaths];
+
         // Создаём связи для новой карточки
         const cardLinks: CardLinks = {
-            userNotePath,
+            userNotePaths: paths,
             generatedNotePath: null,
             imagePaths: new Set()
         };
@@ -86,8 +92,10 @@ export class FileLinkService {
         // Сохраняем в основное хранилище
         this.cardLinksMap.set(cardId, cardLinks);
 
-        // Обновляем индекс
-        this.indexes.userNoteToCard.set(userNotePath, cardId);
+        // Обновляем индексы для всех путей
+        for (const path of paths) {
+            this.indexes.userNoteToCard.set(path, cardId);
+        }
 
         // Сохраняем данные
         this.saveData();
@@ -139,8 +147,109 @@ export class FileLinkService {
         this.saveData();
     }
 
+    // ========================================
+    // Методы управления userNotePaths
+    // ========================================
+
+    /**
+     * Добавляет путь к заметке пользователя в существующую карточку.
+     * @returns true если путь был добавлен, false если уже существует или карточка не найдена
+     */
+    addUserNote(cardId: string, notePath: string): boolean {
+        const cardLinks = this.cardLinksMap.get(cardId);
+        if (!cardLinks) {
+            console.warn(`FileLinkService: Card ${cardId} not found`);
+            return false;
+        }
+
+        // Проверяем, не существует ли уже этот путь
+        if (cardLinks.userNotePaths.includes(notePath)) {
+            return false;
+        }
+
+        // Добавляем путь
+        cardLinks.userNotePaths.push(notePath);
+
+        // Обновляем индекс
+        this.indexes.userNoteToCard.set(notePath, cardId);
+
+        // Сохраняем данные
+        this.saveData();
+
+        // Триггерим событие
+        this.app.workspace.trigger('og-card:user-note-added', {
+            cardId,
+            notePath,
+            allNotePaths: cardLinks.userNotePaths
+        } as UserNoteEventData);
+
+        return true;
+    }
+
+    /**
+     * Удаляет путь к заметке пользователя из массива userNotePaths.
+     * @returns объект с информацией об удалении и оставшихся путях
+     */
+    removeUserNote(cardId: string, notePath: string): { removed: boolean; remaining: string[] } {
+        const cardLinks = this.cardLinksMap.get(cardId);
+        if (!cardLinks) {
+            console.warn(`FileLinkService: Card ${cardId} not found`);
+            return { removed: false, remaining: [] };
+        }
+
+        const index = cardLinks.userNotePaths.indexOf(notePath);
+        if (index === -1) {
+            return { removed: false, remaining: cardLinks.userNotePaths };
+        }
+
+        // Удаляем путь
+        cardLinks.userNotePaths.splice(index, 1);
+
+        // Удаляем из индекса
+        this.indexes.userNoteToCard.delete(notePath);
+
+        // Сохраняем данные
+        this.saveData();
+
+        const remaining = cardLinks.userNotePaths;
+
+        // Триггерим соответствующее событие
+        if (remaining.length === 0) {
+            this.app.workspace.trigger('og-card:last-user-note-deleted', {
+                cardId,
+                notePath,
+                allNotePaths: []
+            } as UserNoteEventData);
+        } else {
+            this.app.workspace.trigger('og-card:user-note-removed', {
+                cardId,
+                notePath,
+                allNotePaths: remaining
+            } as UserNoteEventData);
+        }
+
+        return { removed: true, remaining };
+    }
+
+    /**
+     * Проверяет наличие пользовательских заметок у карточки.
+     */
+    hasUserNotes(cardId: string): boolean {
+        const cardLinks = this.cardLinksMap.get(cardId);
+        return cardLinks ? cardLinks.userNotePaths.length > 0 : false;
+    }
+
+    /**
+     * Возвращает все пути к заметкам пользователя для карточки.
+     */
+    getUserNotePaths(cardId: string): string[] {
+        const cardLinks = this.cardLinksMap.get(cardId);
+        return cardLinks ? [...cardLinks.userNotePaths] : [];
+    }
+
     /**
      * Добавляет изображение в связи карточки.
+     * Поддерживает связь "один ко многим" - одно изображение может принадлежать нескольким карточкам.
      */
     addImage(cardId: string, imagePath: string): void {
         const cardLinks = this.cardLinksMap.get(cardId);
@@ -149,50 +258,94 @@ export class FileLinkService {
             return;
         }
 
-        // Добавляем изображение если его ещё нет
-        if (!cardLinks.imagePaths.has(imagePath)) {
-            cardLinks.imagePaths.add(imagePath);
-            this.indexes.imageToCard.set(imagePath, cardId);
-            this.saveData();
-        }
-    }
+        // Проверяем, есть ли уже такая связь
+        const alreadyInCardLinks = cardLinks.imagePaths.has(imagePath);
+        const cardIds = this.indexes.imageToCards.get(imagePath);
+        const alreadyInIndex = cardIds?.has(cardId);
 
-    /**
-     * Удаляет изображение из связей.
-     */
-    removeImage(cardId: string, imagePath: string): void {
-        const cardLinks = this.cardLinksMap.get(cardId);
-        if (!cardLinks) {
-            console.warn(`FileLinkService: Card ${cardId} not found`);
+        // Если связь уже существует - ничего не делаем
+        if (alreadyInCardLinks && alreadyInIndex) {
             return;
         }
 
-        // Удаляем изображение если оно есть
+        // Добавляем изображение в CardLinks если его ещё нет
+        if (!alreadyInCardLinks) {
+            cardLinks.imagePaths.add(imagePath);
+        }
+
+        // Добавляем cardId в индекс imageToCards
+        if (!cardIds) {
+            this.indexes.imageToCards.set(imagePath, new Set([cardId]));
+        } else if (!alreadyInIndex) {
+            cardIds.add(cardId);
+        }
+
+        this.saveData();
+    }
+
+    /**
+     * Удаляет изображение из связей карточки.
+     * Не удаляет запись из индекса если есть другие карточки ссылающиеся на это изображение.
+     * @returns true если изображение больше не имеет ссылок (можно удалить файл)
+     */
+    removeImage(cardId: string, imagePath: string): boolean {
+        const cardLinks = this.cardLinksMap.get(cardId);
+        if (!cardLinks) {
+            console.warn(`FileLinkService: Card ${cardId} not found`);
+            return false;
+        }
+
+        // Удаляем изображение из CardLinks если оно есть
         if (cardLinks.imagePaths.has(imagePath)) {
             cardLinks.imagePaths.delete(imagePath);
-            this.indexes.imageToCard.delete(imagePath);
-            this.saveData();
         }
+
+        // Удаляем cardId из индекса imageToCards
+        const cardIds = this.indexes.imageToCards.get(imagePath);
+        if (cardIds) {
+            cardIds.delete(cardId);
+            // Если больше нет карточек ссылающихся на это изображение - удаляем запись
+            if (cardIds.size === 0) {
+                this.indexes.imageToCards.delete(imagePath);
+                this.saveData();
+                return true; // Изображение больше не имеет ссылок
+            }
+        }
+
+        this.saveData();
+        return false;
     }
 
     /**
      * Полностью удаляет карточку из всех структур.
+     * @returns Массив путей к изображениям, которые больше не имеют ссылок (можно удалить файлы)
      */
-    unregisterCard(cardId: string): void {
+    unregisterCard(cardId: string): string[] {
         const cardLinks = this.cardLinksMap.get(cardId);
         if (!cardLinks) {
-            return;
+            return [];
         }
 
-        // Удаляем из индексов
-        this.indexes.userNoteToCard.delete(cardLinks.userNotePath);
+        // Удаляем все пути к заметкам пользователя из индекса
+        for (const userNotePath of cardLinks.userNotePaths) {
+            this.indexes.userNoteToCard.delete(userNotePath);
+        }
 
         if (cardLinks.generatedNotePath) {
             this.indexes.generatedNoteToCard.delete(cardLinks.generatedNotePath);
         }
 
+        // Собираем изображения без ссылок после удаления
+        const orphanedImages: string[] = [];
         for (const imagePath of cardLinks.imagePaths) {
-            this.indexes.imageToCard.delete(imagePath);
+            const cardIds = this.indexes.imageToCards.get(imagePath);
+            if (cardIds) {
+                cardIds.delete(cardId);
+                if (cardIds.size === 0) {
+                    this.indexes.imageToCards.delete(imagePath);
+                    orphanedImages.push(imagePath);
+                }
+            }
         }
 
         // Удаляем из основного хранилища
@@ -200,6 +353,8 @@ export class FileLinkService {
 
         // Сохраняем данные
         this.saveData();
+
+        return orphanedImages;
     }
 
     // ========================================
@@ -237,13 +392,14 @@ export class FileLinkService {
             };
         }
 
-        // Проверяем изображение
-        const imageCardId = this.indexes.imageToCard.get(filePath);
-        if (imageCardId) {
+        // Проверяем изображение (возвращаем первый card-id из Set)
+        const imageCardIds = this.indexes.imageToCards.get(filePath);
+        if (imageCardIds && imageCardIds.size > 0) {
+            const firstCardId = imageCardIds.values().next().value!;
             return {
-                cardId: imageCardId,
+                cardId: firstCardId,
                 fileType: 'image',
-                cardLinks: this.cardLinksMap.get(imageCardId) ?? null
+                cardLinks: this.cardLinksMap.get(firstCardId) ?? null
             };
         }
 
@@ -271,9 +427,33 @@ export class FileLinkService {
 
     /**
      * Быстрый поиск card-id по пути изображения.
+     * Возвращает первый card-id из Set (для обратной совместимости).
      */
     getCardIdByImage(imagePath: string): string | null {
-        return this.indexes.imageToCard.get(imagePath) ?? null;
+        const cardIds = this.indexes.imageToCards.get(imagePath);
+        return cardIds && cardIds.size > 0 ? cardIds.values().next().value! : null;
+    }
+
+    /**
+     * Возвращает все card-id для изображения.
+     */
+    getCardIdsByImage(imagePath: string): Set<string> {
+        return this.indexes.imageToCards.get(imagePath) ?? new Set();
+    }
+
+    /**
+     * Проверяет, есть ли ссылки на изображение от карточек.
+     */
+    hasImageReferences(imagePath: string): boolean {
+        const cardIds = this.indexes.imageToCards.get(imagePath);
+        return cardIds ? cardIds.size > 0 : false;
+    }
+
+    /**
+     * Возвращает все зарегистрированные card-id.
+     */
+    getAllCardIds(): string[] {
+        return Array.from(this.cardLinksMap.keys());
     }
 
     // ========================================
@@ -318,7 +498,7 @@ export class FileLinkService {
         this.cardLinksMap.clear();
         this.indexes.userNoteToCard.clear();
         this.indexes.generatedNoteToCard.clear();
-        this.indexes.imageToCard.clear();
+        this.indexes.imageToCards.clear();
     }
 
     /**
@@ -333,18 +513,36 @@ export class FileLinkService {
             return;
         }
 
+        // Для пользовательской заметки используем новую логику
+        if (fileInfo.fileType === 'userNote') {
+            // Удаляем путь из массива userNotePaths
+            const { remaining } = this.removeUserNote(fileInfo.cardId, file.path);
+
+            // Триггерим событие с информацией об оставшихся путях
+            const eventData: FileDeletedEventData = {
+                deletedPath: file.path,
+                cardId: fileInfo.cardId,
+                fileType: 'userNote',
+                cardLinks: fileInfo.cardLinks,
+                remainingUserNotePaths: remaining
+            };
+
+            // Событие уже триггерится в removeUserNote, но для обратной совместимости
+            // триггерим также og-card:user-note-deleted
+            this.app.workspace.trigger('og-card:user-note-deleted', eventData);
+            return;
+        }
+
         const eventData: FileDeletedEventData = {
             deletedPath: file.path,
             cardId: fileInfo.cardId,
-            fileType: fileInfo.fileType as 'userNote' | 'generatedNote' | 'image',
-            cardLinks: fileInfo.cardLinks
+            fileType: fileInfo.fileType as 'generatedNote' | 'image',
+            cardLinks: fileInfo.cardLinks,
+            remainingUserNotePaths: fileInfo.cardLinks.userNotePaths
         };
 
         // Триггерим соответствующее событие
         switch (fileInfo.fileType) {
-            case 'userNote':
-                this.app.workspace.trigger('og-card:user-note-deleted', eventData);
-                break;
             case 'generatedNote':
                 this.app.workspace.trigger('og-card:generated-note-deleted', eventData);
                 break;
@@ -378,11 +576,15 @@ export class FileLinkService {
         // Обновляем пути в зависимости от типа файла
         switch (fileInfo.fileType) {
             case 'userNote':
-                // Обновляем индекс
-                this.indexes.userNoteToCard.delete(oldPath);
-                this.indexes.userNoteToCard.set(file.path, fileInfo.cardId);
-                // Обновляем связь
-                (cardLinks as CardLinks & { userNotePath: string }).userNotePath = file.path;
+                // Находим индекс пути в массиве
+                const pathIndex = cardLinks.userNotePaths.indexOf(oldPath);
+                if (pathIndex !== -1) {
+                    // Обновляем индекс
+                    this.indexes.userNoteToCard.delete(oldPath);
+                    this.indexes.userNoteToCard.set(file.path, fileInfo.cardId);
+                    // Обновляем путь в массиве
+                    cardLinks.userNotePaths[pathIndex] = file.path;
+                }
                 break;
 
             case 'generatedNote':
@@ -394,10 +596,13 @@ export class FileLinkService {
                 break;
 
             case 'image':
-                // Обновляем индекс
-                this.indexes.imageToCard.delete(oldPath);
-                this.indexes.imageToCard.set(file.path, fileInfo.cardId);
-                // Обновляем связь
+                // Обновляем индекс imageToCards
+                const imageCardIds = this.indexes.imageToCards.get(oldPath);
+                if (imageCardIds) {
+                    this.indexes.imageToCards.delete(oldPath);
+                    this.indexes.imageToCards.set(file.path, imageCardIds);
+                }
+                // Обновляем связь в CardLinks для текущей карточки
                 cardLinks.imagePaths.delete(oldPath);
                 cardLinks.imagePaths.add(file.path);
                 break;
@@ -429,7 +634,7 @@ export class FileLinkService {
 
         for (const [cardId, links] of this.cardLinksMap) {
             result.push({
-                userNotePath: links.userNotePath,
+                userNotePaths: links.userNotePaths,
                 generatedNotePath: links.generatedNotePath,
                 imagePaths: Array.from(links.imagePaths)
             });
@@ -440,33 +645,54 @@ export class FileLinkService {
 
     /**
      * Восстанавливает Map из массива и перестраивает индексы.
+     * Поддерживает миграцию старого формата (userNotePath -> userNotePaths).
      */
-    private deserialize(data: Record<string, CardLinksJSON>): void {
+    private deserialize(data: Record<string, CardLinksJSON & { userNotePath?: string }>): void {
         // Очищаем текущие структуры
         this.cardLinksMap.clear();
         this.indexes.userNoteToCard.clear();
         this.indexes.generatedNoteToCard.clear();
-        this.indexes.imageToCard.clear();
+        this.indexes.imageToCards.clear();
 
         // Восстанавливаем из JSON
         for (const [cardId, linksJSON] of Object.entries(data)) {
+            // Миграция старого формата: userNotePath -> userNotePaths
+            let userNotePaths: string[];
+            if ('userNotePaths' in linksJSON && Array.isArray(linksJSON.userNotePaths)) {
+                userNotePaths = linksJSON.userNotePaths;
+            } else if ('userNotePath' in linksJSON && typeof linksJSON.userNotePath === 'string') {
+                // Старый формат - мигрируем
+                userNotePaths = [linksJSON.userNotePath];
+            } else {
+                // Нет данных - пустой массив
+                userNotePaths = [];
+            }
+
             const cardLinks: CardLinks = {
-                userNotePath: linksJSON.userNotePath,
+                userNotePaths,
                 generatedNotePath: linksJSON.generatedNotePath,
                 imagePaths: new Set(linksJSON.imagePaths)
             };
 
             this.cardLinksMap.set(cardId, cardLinks);
 
-            // Восстанавливаем индексы
-            this.indexes.userNoteToCard.set(linksJSON.userNotePath, cardId);
+            // Восстанавливаем индексы для всех путей
+            for (const userNotePath of userNotePaths) {
+                this.indexes.userNoteToCard.set(userNotePath, cardId);
+            }
 
             if (linksJSON.generatedNotePath) {
                 this.indexes.generatedNoteToCard.set(linksJSON.generatedNotePath, cardId);
             }
 
+            // Восстанавливаем индекс изображений (один ко многим)
             for (const imagePath of linksJSON.imagePaths) {
-                this.indexes.imageToCard.set(imagePath, cardId);
+                let cardIds = this.indexes.imageToCards.get(imagePath);
+                if (!cardIds) {
+                    cardIds = new Set();
+                    this.indexes.imageToCards.set(imagePath, cardIds);
+                }
+                cardIds.add(cardId);
             }
         }
     }
@@ -479,7 +705,7 @@ export class FileLinkService {
 
         for (const [cardId, links] of this.cardLinksMap) {
             result[cardId] = {
-                userNotePath: links.userNotePath,
+                userNotePaths: links.userNotePaths,
                 generatedNotePath: links.generatedNotePath,
                 imagePaths: Array.from(links.imagePaths)
             };

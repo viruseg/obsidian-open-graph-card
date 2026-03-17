@@ -26,7 +26,7 @@ export function escapeHTML(str: string): string {
  * @returns card-id или null, если не найден
  */
 export function extractCardId(html: string): string | null {
-    const match = html.match(/<div class="og-card[^"]*"\s+card-id="(\d+)"/);
+    const match = html.match(/<div class="og-card[^"]*"\s+card-id="([^"]+)"/);
     return match ? match[1] : null;
 }
 

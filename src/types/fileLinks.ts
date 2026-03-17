@@ -2,8 +2,8 @@
  * Связи карточки по card-id
  */
 export interface CardLinks {
-    /** Путь к заметке пользователя */
-    userNotePath: string;
+    /** Массив путей к заметкам пользователя */
+    userNotePaths: string[];
     /** Путь к сгенерированной заметке (card-id.md) */
     generatedNotePath: string | null;
     /** Множество путей к локальным изображениям */
@@ -18,15 +18,15 @@ export interface FileLinkIndexes {
     userNoteToCard: Map<string, string>;
     /** путь файла → card-id (для сгенерированных заметок) */
     generatedNoteToCard: Map<string, string>;
-    /** путь файла → card-id (для изображений) */
-    imageToCard: Map<string, string>;
+    /** путь файла → Set<card-id> (для изображений, один ко многим) */
+    imageToCards: Map<string, Set<string>>;
 }
 
 /**
  * Сериализуемая версия CardLinks для JSON
  */
 export interface CardLinksJSON {
-    userNotePath: string;
+    userNotePaths: string[];
     generatedNotePath: string | null;
     imagePaths: string[];
 }
@@ -65,6 +65,8 @@ export interface FileDeletedEventData {
     fileType: 'userNote' | 'generatedNote' | 'image';
     /** Связи карточки */
     cardLinks: CardLinks;
+    /** Оставшиеся пути к заметкам пользователя после удаления */
+    remainingUserNotePaths: string[];
 }
 
 /**
@@ -79,4 +81,24 @@ export interface FileRenamedEventData {
     cardId: string;
     /** Тип файла */
     fileType: 'userNote' | 'generatedNote' | 'image';
+}
+
+/**
+ * Типы событий для пользовательских заметок
+ */
+export type UserNoteEventType =
+    | 'og-card:user-note-added'       // Добавлена новая заметка
+    | 'og-card:user-note-removed'     // Удалена одна заметка (но есть другие)
+    | 'og-card:last-user-note-deleted'; // Удалена последняя заметка
+
+/**
+ * Данные для событий user-note
+ */
+export interface UserNoteEventData {
+    /** card-id */
+    cardId: string;
+    /** Путь к заметке */
+    notePath: string;
+    /** Все пути (до или после изменения) */
+    allNotePaths: string[];
 }

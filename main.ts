@@ -1,6 +1,6 @@
 import { Plugin, Editor, MarkdownView, Notice, TFile, TAbstractFile, EventRef } from 'obsidian';
 import { t } from "./i18n";
-import { OpenGraphSettings, DEFAULT_SETTINGS, FileLinksData, FileDeletedEventData, FileRenamedEventData, CardLinks } from './src/types';
+import { OpenGraphSettings, DEFAULT_SETTINGS, FileLinksData, FileDeletedEventData, FileRenamedEventData, CardLinks, UserNoteEventData } from './src/types';
 import { PluginContext } from './src/core/PluginContext';
 import { parserRegistry } from './src/parsers';
 import { CardData, ScreenshotData } from './src/types';
@@ -9,6 +9,7 @@ import { SettingsTab } from './src/ui';
 import { HtmlBuilder, ImageData } from './src/builders';
 import { CARD_BOUNDS } from './src/utils/constants';
 import { extractCardId, getImageDataUrlsFromCard, replaceImageInCard } from './src/utils/html';
+import { generateCardId } from './src/utils/id';
 
 /**
  * Данные по умолчанию для связей файлов
@@ -39,6 +40,12 @@ export default class OpenGraphPlugin extends Plugin {
         // Инициализация FileLinkService
         this.context.fileLinkService.initialize();
 
+        // Инициализация CardCopyService
+        this.context.cardCopyService.initialize();
+
+        // Запуск проверки целостности через 10 секунд
+        this.context.integrityService.scheduleCheck();
+
         // Подписка на события FileLinkService
         this.registerFileLinkEvents();
 
@@ -62,6 +69,11 @@ export default class OpenGraphPlugin extends Plugin {
     }
 
     onunload() {
+        // Освобождаем ресурсы CardCopyService
+        if (this.context?.cardCopyService) {
+            this.context.cardCopyService.destroy();
+        }
+
         // Освобождаем ресурсы FileLinkService
         if (this.context?.fileLinkService) {
             this.context.fileLinkService.dispose();
@@ -82,9 +94,24 @@ export default class OpenGraphPlugin extends Plugin {
     private async loadFileLinksData(): Promise<void> {
         const data = await this.loadData();
         if (data?.fileLinks) {
+            // Миграция: если fileLinks содержит карточки напрямую (без cardLinks)
+            let cardLinks: Record<string, any> = {};
+            if (data.fileLinks.cardLinks) {
+                // Новый формат
+                cardLinks = data.fileLinks.cardLinks;
+            } else {
+                // Старый формат - карточки напрямую в fileLinks
+                // Проверяем есть ли поля которые выглядят как cardId (начинаются с og_)
+                for (const key of Object.keys(data.fileLinks)) {
+                    if (key.startsWith('og_')) {
+                        cardLinks[key] = data.fileLinks[key];
+                    }
+                }
+            }
+
             this.fileLinksData = {
                 version: data.fileLinks.version ?? 1,
-                cardLinks: data.fileLinks.cardLinks ?? {}
+                cardLinks: cardLinks
             };
         }
     }
@@ -101,7 +128,10 @@ export default class OpenGraphPlugin extends Plugin {
      */
     async saveFileLinksData(): Promise<void> {
         const data = await this.loadData() ?? {};
-        data.fileLinks = this.context?.fileLinkService?.getSerializedData() ?? this.fileLinksData;
+        data.fileLinks = {
+            version: 1,
+            cardLinks: this.context?.fileLinkService?.getSerializedData() ?? {}
+        };
         await this.saveData(data);
     }
 
@@ -109,9 +139,14 @@ export default class OpenGraphPlugin extends Plugin {
      * Подписывается на кастомные события от FileLinkService
      */
     private registerFileLinkEvents(): void {
-        // Событие удаления пользовательской заметки
-        this.registerEvent(this.app.workspace.on('og-card:user-note-deleted' as any, (data: FileDeletedEventData) => {
-            this.handleUserNoteDeleted(data);
+        // Событие удаления одной пользовательской заметки (но есть другие)
+        this.registerEvent(this.app.workspace.on('og-card:user-note-removed' as any, (data: UserNoteEventData) => {
+            this.handleUserNoteRemoved(data);
+        }));
+
+        // Событие удаления последней пользовательской заметки
+        this.registerEvent(this.app.workspace.on('og-card:last-user-note-deleted' as any, (data: UserNoteEventData) => {
+            this.handleLastUserNoteDeleted(data);
         }));
 
         // Событие удаления сгенерированной заметки
@@ -131,37 +166,28 @@ export default class OpenGraphPlugin extends Plugin {
     }
 
     /**
-     * Обрабатывает удаление пользовательской заметки
+     * Обрабатывает удаление одной пользовательской заметки (но есть другие)
      */
-    private async handleUserNoteDeleted(data: FileDeletedEventData): Promise<void> {
-        // Сначала удаляем связи, чтобы последующие события удаления файлов не обрабатывались
-        this.context.fileLinkService.unregisterCard(data.cardId);
+    private async handleUserNoteRemoved(data: UserNoteEventData): Promise<void> {
+        console.log(`[OpenGraphPlugin] User note removed: ${data.notePath}, remaining: ${data.allNotePaths.length}`);
+        // Ничего не делаем - карточка остаётся в других заметках
+    }
 
-        // Удаляем сгенерированную заметку если она есть
-        if (data.cardLinks.generatedNotePath) {
-            const genNoteFile = this.app.vault.getAbstractFileByPath(data.cardLinks.generatedNotePath);
-            if (genNoteFile) {
-                try {
-                    await this.app.vault.trash(genNoteFile, true);
-                } catch (error) {
-                    console.error(`OpenGraphPlugin: Failed to delete generated note:`, error);
-                }
-            }
-        }
+    /**
+     * Обрабатывает удаление последней пользовательской заметки
+     */
+    private async handleLastUserNoteDeleted(data: UserNoteEventData): Promise<void> {
+        console.log(`[OpenGraphPlugin] Last user note deleted for card: ${data.cardId}`);
 
-        // Удаляем все локальные изображения
-        for (const imagePath of data.cardLinks.imagePaths) {
-            const imageFile = this.app.vault.getAbstractFileByPath(imagePath);
-            if (imageFile) {
-                try {
-                    await this.app.vault.trash(imageFile, true);
-                } catch (error) {
-                    // Игнорируем ошибку, если файл уже удалён
-                    if (!error.message?.includes('ENOENT')) {
-                        console.error(`OpenGraphPlugin: Failed to delete image:`, error);
-                    }
-                }
-            }
+        // Удаляем сгенерированную заметку
+        await this.context.imageNotesService.deleteNote(data.cardId);
+
+        // Удаляем карточку из реестра и получаем изображения без ссылок
+        const orphanedImages = this.context.fileLinkService.unregisterCard(data.cardId);
+
+        // Удаляем только изображения, на которые нет ссылок от других карточек
+        if (orphanedImages.length > 0) {
+            await this.context.imageService.deleteLocalImages(orphanedImages);
         }
     }
 
@@ -169,11 +195,11 @@ export default class OpenGraphPlugin extends Plugin {
      * Обрабатывает удаление сгенерированной заметки
      */
     private async handleGeneratedNoteDeleted(data: FileDeletedEventData): Promise<void> {
-        // Сначала удаляем связи, чтобы последующие события удаления файлов не обрабатывались
-        this.context.fileLinkService.unregisterCard(data.cardId);
+        // Удаляем карточку из реестра и получаем изображения без ссылок
+        const orphanedImages = this.context.fileLinkService.unregisterCard(data.cardId);
 
-        // Удаляем все локальные изображения
-        for (const imagePath of data.cardLinks.imagePaths) {
+        // Удаляем только изображения, на которые нет ссылок от других карточек
+        for (const imagePath of orphanedImages) {
             const imageFile = this.app.vault.getAbstractFileByPath(imagePath);
             if (imageFile) {
                 try {
@@ -306,7 +332,7 @@ export default class OpenGraphPlugin extends Plugin {
             if (lineText.includes('<div class="og-card')) {
                 startLine = i;
                 // Пытаемся извлечь card-id из начала карточки
-                const cardIdMatch = lineText.match(/<div class="og-card[^"]*"\s+card-id="(\d+)"/);
+                const cardIdMatch = lineText.match(/<div class="og-card[^"]*"\s+card-id="([^"]+)"/);
                 if (cardIdMatch) {
                     cardId = cardIdMatch[1];
                 }
@@ -321,7 +347,7 @@ export default class OpenGraphPlugin extends Plugin {
                 if (lineText.includes('<div class="og-card')) {
                     startLine = i;
                     // Пытаемся извлечь card-id из начала карточки
-                    const cardIdMatch = lineText.match(/<div class="og-card[^"]*"\s+card-id="(\d+)"/);
+                    const cardIdMatch = lineText.match(/<div class="og-card[^"]*"\s+card-id="([^"]+)"/);
                     if (cardIdMatch) {
                         cardId = cardIdMatch[1];
                     }
@@ -452,7 +478,7 @@ export default class OpenGraphPlugin extends Plugin {
             }
 
             // Генерируем HTML с помощью HtmlBuilder
-            const cardId = HtmlBuilder.generateCardId();
+            const cardId = generateCardId();
             const htmlBuilder = new HtmlBuilder(cardId);
             const htmlBlock = htmlBuilder.buildCard(cardData, imageData, screenshotData);
 
@@ -462,7 +488,7 @@ export default class OpenGraphPlugin extends Plugin {
             new Notice(t('cardCreated'));
 
             // Регистрируем карточку в FileLinkService
-            this.context.fileLinkService.registerCard(cardId.toString(), sourcePath);
+            this.context.fileLinkService.registerCard(cardId, sourcePath);
 
             // Добавляем изображения в связи
             if (imageData?.src && this.settings.saveImagesLocally) {
@@ -496,9 +522,8 @@ export default class OpenGraphPlugin extends Plugin {
         // Получаем текущий HTML карточки
         const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
 
-        // Пытаемся извлечь card-id из карточки
-        const cardIdMatch = cardHtml.match(/<div class="og-card[^"]*"\s+card-id="(\d+)"/);
-        const cardId = cardIdMatch ? cardIdMatch[1] : null;
+        // Извлекаем card-id из карточки
+        const cardId = extractCardId(cardHtml);
 
         // Ищем позицию <!--og-card-end--> (с card-id или без) для вставки/обновления пользовательского текста
         let cardEndMarker: string;

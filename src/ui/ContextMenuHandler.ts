@@ -2,6 +2,7 @@ import { EventRef, Menu, Editor, MarkdownView, Notice } from 'obsidian';
 import { PluginContext } from '../core/PluginContext';
 import { getUrlUnderCursor } from '../utils/editor';
 import { extractCardId } from '../utils/html';
+import { generateCardId } from '../utils/id';
 import { t } from '../../i18n';
 import { CardDescriptionModal } from './modals/CardDescriptionModal';
 import { CardInfo, UrlInfo, ContextMenuHandlerCallbacks } from '../types';
@@ -229,7 +230,7 @@ export class ContextMenuHandler {
 
         try {
             const extractedCardId = extractCardId(cardHtml);
-            const cardId = extractedCardId || Date.now().toString();
+            const cardId = extractedCardId || generateCardId();
             const sourcePath = view.file?.path || '';
 
             // Проверяем, зарегистрирована ли карточка

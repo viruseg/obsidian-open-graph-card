@@ -1,11 +1,16 @@
 {
   "description": "",
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "esbuild": "^0.27.3",
+    "jest": "^30.3.0",
     "obsidian": "^1.12.3",
+    "ts-jest": "^29.4.6",
     "typescript": "^5.9.3"
   },
   "scripts": {
-    "build": "esbuild main.ts --bundle --platform=node --external:obsidian --format=cjs --outfile=main.js"
+    "build": "esbuild main.ts --bundle --platform=node --external:obsidian --format=cjs --outfile=main.js",
+    "test": "jest",
+    "test:coverage": "jest --coverage"
   }
 }

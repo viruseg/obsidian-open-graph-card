@@ -23,6 +23,8 @@ flowchart TB
         F[FileLinkService]
         G[ImageService]
         H[ImageNotesService]
+        CC[CardCopyService]
+        IS[IntegrityService]
     end
     
     subgraph Parsers
@@ -47,6 +49,7 @@ flowchart TB
         Q[editor.ts]
         R[html.ts]
         S[constants.ts]
+        ID[id.ts]
     end
     
     B --> N
@@ -58,6 +61,8 @@ flowchart TB
     C --> F
     C --> G
     C --> H
+    C --> CC
+    C --> IS
     E --> I
     B --> M
     F --> G
@@ -66,6 +71,12 @@ flowchart TB
     J --> I
     K --> I1
     K --> J
+    M --> ID
+    CC --> F
+    CC --> G
+    CC --> H
+    IS --> F
+    IS --> H
 ```
 
 ## Project Structure
@@ -77,7 +88,7 @@ src/
 │   ├── settings.ts     # OpenGraphSettings, DEFAULT_SETTINGS
 │   ├── card.ts         # CardData, CardInfo, UrlInfo, RatingData, ScreenshotData
 │   ├── image.ts        # ImageSourceClassification, ImageDataUrlInfo, ImageDownloadResult, ImageRestoreResult, ImageData
-│   ├── fileLinks.ts    # CardLinks, FileLinkIndexes, FileLinksData, FileLinkInfo, FileDeletedEventData, FileRenamedEventData
+│   ├── fileLinks.ts    # CardLinks, FileLinkIndexes, FileLinksData, FileLinkInfo, FileDeletedEventData, FileRenamedEventData, UserNoteEventData
 │   └── ui.ts           # ContextMenuHandlerCallbacks
 │
 ├── core/
@@ -87,7 +98,9 @@ src/
 │   ├── FetchService.ts     # HTTP requests via Obsidian API
 │   ├── FileLinkService.ts  # File links tracking and events
 │   ├── ImageService.ts     # Image download, classification, cleanup
-│   └── ImageNotesService.ts # Image notes synchronization
+│   ├── ImageNotesService.ts # Image notes synchronization
+│   ├── CardCopyService.ts  # Card copy detection and handling
+│   └── IntegrityService.ts # Integrity check on startup
 │
 ├── parsers/
 │   ├── OpenGraphParser.ts  # Abstract base parser
@@ -108,7 +121,8 @@ src/
 └── utils/
     ├── constants.ts       # CSS_CLASSES, STEAM_RATING_CLASSES, CARD_BOUNDS
     ├── editor.ts          # getUrlUnderCursor, setCursorWithScrollPrevention
-    └── html.ts            # escapeHTML, extractCardId, extractUrl, extractUserText, getImageDataUrlsFromCard, replaceImageInCard
+    ├── html.ts            # escapeHTML, extractCardId, extractUrl, extractUserText, getImageDataUrlsFromCard, replaceImageInCard
+    └── id.ts              # generateCardId - unique card ID generator
 ```
 
 ## Key Modules
@@ -121,20 +135,28 @@ Dependency Injection container that holds:
 - `fileLinkService: FileLinkService` - File links tracking and events
 - `imageService: ImageService` - Image operations
 - `imageNotesService: ImageNotesService` - Image notes synchronization
+- `cardCopyService: CardCopyService` - Card copy detection and handling
+- `integrityService: IntegrityService` - Integrity check on startup
 
 ### FetchService ([`src/services/FetchService.ts`](src/services/FetchService.ts))
 - [`fetchHtml()`](src/services/FetchService.ts:13) - Fetch HTML content via Obsidian API
 - [`fetchBinary()`](src/services/FetchService.ts:29) - Fetch binary data (images) via Obsidian API
 
 ### FileLinkService ([`src/services/FileLinkService.ts`](src/services/FileLinkService.ts))
-- [`registerCard()`](src/services/FileLinkService.ts:53) — Register card with user note path
-- [`setGeneratedNote()`](src/services/FileLinkService.ts:80) — Set generated note path
-- [`addImage()`](src/services/FileLinkService.ts:126) — Add image to card links
-- [`removeImage()`](src/services/FileLinkService.ts:144) — Remove image from card links
-- [`unregisterCard()`](src/services/FileLinkService.ts:162) — Remove card and all links
-- [`findFileLink()`](src/services/FileLinkService.ts:200) — Find card by file path
-- [`handleFileDelete()`](src/services/FileLinkService.ts:309) — Handle file deletion events
-- [`handleFileRename()`](src/services/FileLinkService.ts:342) — Handle file rename events
+- [`registerCard()`](src/services/FileLinkService.ts:75) — Register card with user note paths (string or string[])
+- [`setGeneratedNote()`](src/services/FileLinkService.ts:107) — Set generated note path
+- [`clearGeneratedNote()`](src/services/FileLinkService.ts:132) — Clear generated note path
+- [`addUserNote()`](src/services/FileLinkService.ts:158) — Add user note path to existing card
+- [`removeUserNote()`](src/services/FileLinkService.ts:193) — Remove user note path from card
+- [`hasUserNotes()`](src/services/FileLinkService.ts:237) — Check if card has user notes
+- [`getUserNotePaths()`](src/services/FileLinkService.ts:245) — Get all user note paths for card
+- [`addImage()`](src/services/FileLinkService.ts:253) — Add image to card links
+- [`removeImage()`](src/services/FileLinkService.ts:271) — Remove image from card links
+- [`unregisterCard()`](src/services/FileLinkService.ts:289) — Remove card and all links
+- [`findFileLink()`](src/services/FileLinkService.ts:329) — Find card by file path
+- [`getAllCardIds()`](src/services/FileLinkService.ts:392) — Get all registered card IDs
+- [`handleFileDelete()`](src/services/FileLinkService.ts:445) — Handle file deletion events
+- [`handleFileRename()`](src/services/FileLinkService.ts) — Handle file rename events
 
 ### ImageService ([`src/services/ImageService.ts`](src/services/ImageService.ts))
 - [`downloadAndSave()`](src/services/ImageService.ts:23) - Download and save image to vault
@@ -148,6 +170,26 @@ Dependency Injection container that holds:
 - [`syncNote()`](src/services/ImageNotesService.ts:30) - Synchronize note with card images
 - [`deleteNote()`](src/services/ImageNotesService.ts:64) - Delete card's note
 - [`getNotePath()`](src/services/ImageNotesService.ts:83) - Get note path by card ID
+
+### CardCopyService ([`src/services/CardCopyService.ts`](src/services/CardCopyService.ts))
+Service for detecting and handling card copying:
+- [`initialize()`](src/services/CardCopyService.ts:53) - Initialize event listeners
+- [`destroy()`](src/services/CardCopyService.ts:64) - Release resources
+- [`suspendProcessing()`](src/services/CardCopyService.ts:81) - Suspend change processing
+- [`resumeProcessing()`](src/services/CardCopyService.ts:88) - Resume change processing
+- [`processCard()`](src/services/CardCopyService.ts:235) - Process detected card
+- [`handleCardCopy()`](src/services/CardCopyService.ts:264) - Handle card copy (generate new ID, copy images)
+- [`copyImage()`](src/services/CardCopyService.ts:354) - Copy image file for new card
+
+Events listened: `editor-change`, `editor-paste`
+Protection: Double-processing prevention via `processedChanges` Set
+
+### IntegrityService ([`src/services/IntegrityService.ts`](src/services/IntegrityService.ts))
+Service for checking links integrity on startup:
+- [`scheduleCheck()`](src/services/IntegrityService.ts:39) - Schedule integrity check after 10 seconds
+- [`checkIntegrity()`](src/services/IntegrityService.ts:55) - Main integrity check method
+- [`fileExists()`](src/services/IntegrityService.ts:117) - Check if file exists in vault
+- [`cleanupBrokenLinks()`](src/services/IntegrityService.ts:132) - Remove broken links
 
 ### OpenGraphParser ([`src/parsers/OpenGraphParser.ts`](src/parsers/OpenGraphParser.ts))
 Abstract base class for all parsers:
@@ -180,7 +222,9 @@ Extends OpenGraphParser for Steam-specific data:
 - [`buildRating()`](src/builders/HtmlBuilder.ts:77) - Rating display with CSS class
 - [`buildTags()`](src/builders/HtmlBuilder.ts:85) - Tags container
 - [`buildScreenshots()`](src/builders/HtmlBuilder.ts:95) - Screenshots grid
-- [`generateCardId()`](src/builders/HtmlBuilder.ts:118) - Timestamp-based unique ID
+
+### id.ts utilities ([`src/utils/id.ts`](src/utils/id.ts))
+- [`generateCardId()`](src/utils/id.ts:10) - Generate unique card ID
 
 ### html.ts utilities ([`src/utils/html.ts`](src/utils/html.ts))
 - [`escapeHTML()`](src/utils/html.ts:12) - Escape special HTML characters
@@ -205,6 +249,15 @@ Extends OpenGraphParser for Steam-specific data:
 - `ImageRestoreResult` - Result of image restore operation
 - `ImageData` - Image data interface for card images
 
+### Types: fileLinks.ts ([`src/types/fileLinks.ts`](src/types/fileLinks.ts))
+- `CardLinks` - Card links structure with `userNotePaths: string[]`
+- `FileLinkIndexes` - Reverse indexes for O(1) lookup
+- `FileLinksData` - Data structure for persistence
+- `FileLinkInfo` - Result of file link search
+- `FileDeletedEventData` - Event data for file deletion
+- `FileRenamedEventData` - Event data for file rename
+- `UserNoteEventData` - Event data for user note changes
+
 ### Types: ui.ts ([`src/types/ui.ts`](src/types/ui.ts))
 - `ContextMenuHandlerCallbacks` - Callback interface for ContextMenuHandler:
   - `getCardUnderCursor` - Get card info under cursor
@@ -218,7 +271,15 @@ Extends OpenGraphParser for Steam-specific data:
 Cards use HTML comment markers for parsing: `<!--og-card-end-->` and `<!--og-user-text-end-->`. These markers are essential for the [`getCardUnderCursor()`](main.ts:49) function to locate card boundaries in markdown.
 
 ### Card ID System
-Each card has a unique `card-id` attribute (timestamp-based). The end marker includes the ID: `<!--og-card-end {cardId}-->`. This prevents mismatched card boundaries when multiple cards exist.
+Each card has a unique `card-id` attribute. The end marker includes the ID: `<!--og-card-end {cardId}-->`. This prevents mismatched card boundaries when multiple cards exist.
+
+### Card ID Generation
+Card IDs are generated using [`generateCardId()`](src/utils/id.ts:10):
+- Format: `og_{timestamp}_{random}`
+- `timestamp`: milliseconds since epoch
+- `random`: 8 random characters (a-z0-9)
+- Uses `crypto.getRandomValues()` for cryptographically secure generation
+- Example: `og_1710521234567_a3b5c7d9`
 
 ### Live Preview Integration
 Uses CodeMirror's `posAtDOM()` method to map DOM elements back to editor positions. See [`lastContextEventTarget`](src/ui/ContextMenuHandler.ts:28) pattern for context menu handling.
@@ -256,17 +317,25 @@ The [`ImageNotesService`](src/services/ImageNotesService.ts) maintains sync betw
 
 ### Links Structure
 Each card can have the following links:
-- **User Note ↔ Card** — User's markdown file containing the card
+- **User Notes ↔ Card** — Array of user's markdown files containing the card (`userNotePaths: string[]`)
 - **Generated Note ↔ Card** — Auto-generated note with image links (named `{card-id}.md`)
 - **Images ↔ Card** — Local image files downloaded from card
 
+### Multiple User Notes Support
+A single card can exist in multiple user notes simultaneously:
+- When a card is copied to another note, a new entry is added to `userNotePaths`
+- [`addUserNote()`](src/services/FileLinkService.ts:158) adds a new note path
+- [`removeUserNote()`](src/services/FileLinkService.ts:193) removes a note path
+- Card is only fully deleted when `userNotePaths` becomes empty
+
 ### Event Flow
-1. **Card Created** → `registerCard(cardId, userNotePath)`
+1. **Card Created** → `registerCard(cardId, userNotePaths)`
 2. **Images Downloaded** → `addImage(cardId, imagePath)` for each image
 3. **Generated Note Created** → `setGeneratedNote(cardId, notePath)`
+4. **Card Copied** → `addUserNote(cardId, newNotePath)` + new card-id generation + image copying
 
 ### File Deletion Handling
-- **User Note Deleted** → Delete generated note, remove all links
+- **User Note Deleted** → `removeUserNote()`, if last note then delete generated note and images
 - **Generated Note Deleted** → Delete all local images, remove all links
 - **Image Deleted** → Update generated note, replace local path with URL in card
 
@@ -274,10 +343,47 @@ Each card can have the following links:
 - `og-card-created` — Card created in user note
 - `og-card-images-downloaded` — Images downloaded to local storage
 - `og-card-images-restored` — Images restored to remote URLs
-- `og-card:user-note-deleted` — User note file deleted
+- `og-card:user-note-added` — User note path added to card
+- `og-card:user-note-removed` — User note path removed from card (more notes remain)
+- `og-card:last-user-note-deleted` — Last user note path removed from card
 - `og-card:generated-note-deleted` — Generated note file deleted
 - `og-card:image-deleted` — Linked image file deleted
 - `og-card:file-renamed` — Linked file renamed
+
+## Card Copy Handling
+
+### Copy Detection
+[`CardCopyService`](src/services/CardCopyService.ts) monitors:
+- `editor-change` event for duplicate/cut-paste operations
+- `editor-paste` event for clipboard paste
+
+### Copy Processing
+When a card copy is detected:
+1. Generate new unique card-id via [`generateCardId()`](src/utils/id.ts:10)
+2. Replace card-id in HTML (attribute and end marker)
+3. Copy all local images to new files
+4. Update image paths in HTML
+5. Register new card in [`FileLinkService`](src/services/FileLinkService.ts)
+6. Sync image notes via [`ImageNotesService`](src/services/ImageNotesService.ts)
+
+### Protection Mechanisms
+- `processedChanges` Set prevents double-processing
+- `processingSuspended` flag for temporary suspension during programmatic changes
+- Memory cleanup for old change keys (max 100 entries)
+
+## Integrity Check
+
+### Startup Check
+[`IntegrityService`](src/services/IntegrityService.ts) runs 10 seconds after plugin load:
+1. Iterate all registered card IDs
+2. Check existence of each linked file
+3. Remove broken links from `CardLinks`
+4. Unregister cards with no remaining user notes
+
+### Broken Links Cleanup
+- Missing user notes → removed from `userNotePaths` array
+- Missing generated note → `clearGeneratedNote()`
+- Missing images → removed from `imagePaths` Set
 
 ## Extension Points
 

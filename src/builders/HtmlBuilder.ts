@@ -6,9 +6,9 @@ import { escapeHTML } from '../utils/html';
  * Строитель HTML для карточек Open Graph
  */
 export class HtmlBuilder {
-    private cardId: number;
+    private cardId: string;
 
-    constructor(cardId: number) {
+    constructor(cardId: string) {
         this.cardId = cardId;
     }
 
@@ -101,12 +101,5 @@ export class HtmlBuilder {
     buildUserText(text: string): string {
         if (!text || text.trim() === '') return '';
         return `<div class="${CSS_CLASSES.USER_TEXT}">${escapeHTML(text)}</div><!--og-user-text-end-->`;
-    }
-
-    /**
-     * Генерирует уникальный ID карточки на основе timestamp
-     */
-    static generateCardId(): number {
-        return Date.now();
     }
 }

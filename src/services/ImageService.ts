@@ -1,5 +1,6 @@
 import { App, TFile } from 'obsidian';
 import { FetchService } from './FetchService';
+import { FileLinkService } from './FileLinkService';
 import { ImageSourceClassification, ImageDownloadResult, ImageRestoreResult, ImageDataUrlInfo } from '../types';
 import { getImageSourcesFromCard, getImageDataUrlsFromCard, replaceImageInCard } from '../utils/html';
 
@@ -7,10 +8,19 @@ import { getImageSourcesFromCard, getImageDataUrlsFromCard, replaceImageInCard }
  * Сервис для работы с изображениями
  */
 export class ImageService {
+    private fileLinkService: FileLinkService | null = null;
+
     constructor(
         private app: App,
         private fetchService: FetchService
     ) {}
+
+    /**
+     * Устанавливает FileLinkService для проверки ссылок на изображения
+     */
+    setFileLinkService(fileLinkService: FileLinkService): void {
+        this.fileLinkService = fileLinkService;
+    }
 
     /**
      * Скачивает изображение и сохраняет его в хранилище
@@ -75,10 +85,17 @@ export class ImageService {
 
     /**
      * Удаляет локальные файлы изображений из хранилища
+     * Проверяет наличие ссылок на изображения от других карточек перед удалением
      * @param paths - массив локальных путей к файлам
      */
     async deleteLocalImages(paths: string[]): Promise<void> {
         for (const path of paths) {
+            // Проверяем, есть ли ссылки на изображение от других карточек
+            if (this.fileLinkService && this.fileLinkService.hasImageReferences(path)) {
+                // Есть ссылки - не удаляем файл
+                continue;
+            }
+
             try {
                 const file = this.app.vault.getAbstractFileByPath(path);
                 if (file instanceof TFile) {
@@ -93,7 +110,7 @@ export class ImageService {
     /**
      * Координирующий метод для очистки локальных изображений карточки
      * @param cardHtml - HTML-код карточки
-     * Удаляет локальные изображения, URL игнорируются
+     * Удаляет локальные изображения только если на них нет ссылок от других карточек
      */
     async cleanupCardImages(cardHtml: string): Promise<void> {
         const sources = getImageSourcesFromCard(cardHtml);
@@ -181,7 +198,8 @@ export class ImageService {
     }
 
     /**
-     * Восстанавливает URL изображений из data-url атрибутов и удаляет локальные файлы
+     * Восстанавливает URL изображений из data-url атрибутов и удаляет локальные файлы.
+     * Не удаляет файлы если на них есть ссылки от других карточек.
      * @param cardHtml - HTML-код карточки
      * @returns результат операции восстановления
      */
@@ -196,10 +214,12 @@ export class ImageService {
             if (!img.dataUrl) continue;
 
             try {
-                // Удаляем локальный файл
-                const file = this.app.vault.getAbstractFileByPath(img.src);
-                if (file instanceof TFile) {
-                    await this.app.vault.delete(file);
+                // Удаляем локальный файл только если нет ссылок от других карточек
+                if (!this.fileLinkService || !this.fileLinkService.hasImageReferences(img.src)) {
+                    const file = this.app.vault.getAbstractFileByPath(img.src);
+                    if (file instanceof TFile) {
+                        await this.app.vault.delete(file);
+                    }
                 }
 
                 // Восстанавливаем URL из data-url
