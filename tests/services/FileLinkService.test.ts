@@ -474,6 +474,72 @@ describe('FileLinkService', () => {
     });
   });
 
+  describe('multiple cards per user note path', () => {
+    it('should keep links for all cards when several cards share one user note', () => {
+      const service = new FileLinkService(
+        mockApp as any,
+        () => mockData,
+        saveDataMock
+      );
+
+      service.registerCard('card1', 'shared-note.md');
+      service.registerCard('card2', 'shared-note.md');
+
+      const cardIds = service.getCardIdsByUserNote('shared-note.md');
+
+      expect(cardIds.has('card1')).toBe(true);
+      expect(cardIds.has('card2')).toBe(true);
+      expect(cardIds.size).toBe(2);
+    });
+
+    it('should remove user note from all cards on file delete', () => {
+      const service = new FileLinkService(
+        mockApp as any,
+        () => mockData,
+        saveDataMock
+      );
+
+      service.registerCard('card1', 'shared-note.md');
+      service.registerCard('card2', 'shared-note.md');
+      mockApp.workspace.trigger.mockClear();
+
+      const file = createMockFile('shared-note.md');
+      service.handleFileDelete(file as any);
+
+      expect(service.getUserNotePaths('card1')).toEqual([]);
+      expect(service.getUserNotePaths('card2')).toEqual([]);
+
+      const deletionEvents = mockApp.workspace.trigger.mock.calls.filter(
+        (call: any[]) => call[0] === 'og-card:user-note-deleted'
+      );
+      expect(deletionEvents).toHaveLength(2);
+    });
+
+    it('should rename user note path for all linked cards', () => {
+      const service = new FileLinkService(
+        mockApp as any,
+        () => mockData,
+        saveDataMock
+      );
+
+      service.registerCard('card1', 'shared-note.md');
+      service.registerCard('card2', 'shared-note.md');
+      mockApp.workspace.trigger.mockClear();
+
+      const renamedFile = createMockFile('renamed-note.md');
+      service.handleFileRename(renamedFile as any, 'shared-note.md');
+
+      expect(service.getUserNotePaths('card1')).toContain('renamed-note.md');
+      expect(service.getUserNotePaths('card2')).toContain('renamed-note.md');
+      expect(service.getCardIdsByUserNote('shared-note.md').size).toBe(0);
+
+      const renameEvents = mockApp.workspace.trigger.mock.calls.filter(
+        (call: any[]) => call[0] === 'og-card:file-renamed'
+      );
+      expect(renameEvents).toHaveLength(2);
+    });
+  });
+
   // ========================================
   // Тесты для setGeneratedNote/clearGeneratedNote
   // ========================================
@@ -1115,6 +1181,29 @@ describe('FileLinkService', () => {
 
       expect(service.getCardIdByImage('image.png')).toBeNull();
       expect(service.getCardIdByImage('image-renamed.png')).toBe('card1');
+    });
+
+    it('should update image path for all cards sharing same image', () => {
+      const service = new FileLinkService(
+        mockApp as any,
+        () => mockData,
+        saveDataMock
+      );
+      service.registerCard('card1', 'note1.md');
+      service.registerCard('card2', 'note2.md');
+      service.addImage('card1', 'shared.png');
+      service.addImage('card2', 'shared.png');
+
+      const file = createMockFile('shared-renamed.png');
+      service.handleFileRename(file as any, 'shared.png');
+
+      const card1Links = service.getCardLinks('card1');
+      const card2Links = service.getCardLinks('card2');
+
+      expect(card1Links?.imagePaths.has('shared.png')).toBe(false);
+      expect(card2Links?.imagePaths.has('shared.png')).toBe(false);
+      expect(card1Links?.imagePaths.has('shared-renamed.png')).toBe(true);
+      expect(card2Links?.imagePaths.has('shared-renamed.png')).toBe(true);
     });
 
     it('should trigger og-card:file-renamed event', () => {

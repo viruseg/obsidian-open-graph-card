@@ -94,7 +94,12 @@ export class FileLinkService {
 
         // Обновляем индексы для всех путей
         for (const path of paths) {
-            this.indexes.userNoteToCard.set(path, cardId);
+            let cardIds = this.indexes.userNoteToCard.get(path);
+            if (!cardIds) {
+                cardIds = new Set();
+                this.indexes.userNoteToCard.set(path, cardIds);
+            }
+            cardIds.add(cardId);
         }
 
         // Сохраняем данные
@@ -171,7 +176,12 @@ export class FileLinkService {
         cardLinks.userNotePaths.push(notePath);
 
         // Обновляем индекс
-        this.indexes.userNoteToCard.set(notePath, cardId);
+        let cardIds = this.indexes.userNoteToCard.get(notePath);
+        if (!cardIds) {
+            cardIds = new Set();
+            this.indexes.userNoteToCard.set(notePath, cardIds);
+        }
+        cardIds.add(cardId);
 
         // Сохраняем данные
         this.saveData();
@@ -206,7 +216,13 @@ export class FileLinkService {
         cardLinks.userNotePaths.splice(index, 1);
 
         // Удаляем из индекса
-        this.indexes.userNoteToCard.delete(notePath);
+        const noteCardIds = this.indexes.userNoteToCard.get(notePath);
+        if (noteCardIds) {
+            noteCardIds.delete(cardId);
+            if (noteCardIds.size === 0) {
+                this.indexes.userNoteToCard.delete(notePath);
+            }
+        }
 
         // Сохраняем данные
         this.saveData();
@@ -328,7 +344,13 @@ export class FileLinkService {
 
         // Удаляем все пути к заметкам пользователя из индекса
         for (const userNotePath of cardLinks.userNotePaths) {
-            this.indexes.userNoteToCard.delete(userNotePath);
+            const noteCardIds = this.indexes.userNoteToCard.get(userNotePath);
+            if (noteCardIds) {
+                noteCardIds.delete(cardId);
+                if (noteCardIds.size === 0) {
+                    this.indexes.userNoteToCard.delete(userNotePath);
+                }
+            }
         }
 
         if (cardLinks.generatedNotePath) {
@@ -373,12 +395,13 @@ export class FileLinkService {
      */
     findFileLink(filePath: string): FileLinkInfo {
         // Проверяем пользовательскую заметку
-        const userNoteCardId = this.indexes.userNoteToCard.get(filePath);
-        if (userNoteCardId) {
+        const userNoteCardIds = this.indexes.userNoteToCard.get(filePath);
+        if (userNoteCardIds && userNoteCardIds.size > 0) {
+            const firstCardId = userNoteCardIds.values().next().value!;
             return {
-                cardId: userNoteCardId,
+                cardId: firstCardId,
                 fileType: 'userNote',
-                cardLinks: this.cardLinksMap.get(userNoteCardId) ?? null
+                cardLinks: this.cardLinksMap.get(firstCardId) ?? null
             };
         }
 
@@ -415,7 +438,15 @@ export class FileLinkService {
      * Быстрый поиск card-id по пути заметки пользователя.
      */
     getCardIdByUserNote(userNotePath: string): string | null {
-        return this.indexes.userNoteToCard.get(userNotePath) ?? null;
+        const cardIds = this.indexes.userNoteToCard.get(userNotePath);
+        return cardIds && cardIds.size > 0 ? cardIds.values().next().value! : null;
+    }
+
+    /**
+     * Быстрый поиск всех card-id по пути заметки пользователя.
+     */
+    getCardIdsByUserNote(userNotePath: string): Set<string> {
+        return this.indexes.userNoteToCard.get(userNotePath) ?? new Set();
     }
 
     /**
@@ -506,30 +537,37 @@ export class FileLinkService {
      * Триггерит события для каждого типа файла.
      */
     handleFileDelete(file: TAbstractFile): void {
+        const userNoteCardIds = this.indexes.userNoteToCard.get(file.path);
+        if (userNoteCardIds && userNoteCardIds.size > 0) {
+            for (const cardId of Array.from(userNoteCardIds)) {
+                const cardLinks = this.cardLinksMap.get(cardId);
+                if (!cardLinks) {
+                    continue;
+                }
+
+                // Удаляем путь из массива userNotePaths
+                const { remaining } = this.removeUserNote(cardId, file.path);
+
+                // Триггерим событие с информацией об оставшихся путях
+                const eventData: FileDeletedEventData = {
+                    deletedPath: file.path,
+                    cardId,
+                    fileType: 'userNote',
+                    cardLinks,
+                    remainingUserNotePaths: remaining
+                };
+
+                // Событие уже триггерится в removeUserNote, но для обратной совместимости
+                // триггерим также og-card:user-note-deleted
+                this.app.workspace.trigger('og-card:user-note-deleted', eventData);
+            }
+            return;
+        }
+
         const fileInfo = this.findFileLink(file.path);
 
         // Если файл не связан с карточками — ничего не делаем
         if (!fileInfo.cardId || !fileInfo.cardLinks || fileInfo.fileType === 'unknown') {
-            return;
-        }
-
-        // Для пользовательской заметки используем новую логику
-        if (fileInfo.fileType === 'userNote') {
-            // Удаляем путь из массива userNotePaths
-            const { remaining } = this.removeUserNote(fileInfo.cardId, file.path);
-
-            // Триггерим событие с информацией об оставшихся путях
-            const eventData: FileDeletedEventData = {
-                deletedPath: file.path,
-                cardId: fileInfo.cardId,
-                fileType: 'userNote',
-                cardLinks: fileInfo.cardLinks,
-                remainingUserNotePaths: remaining
-            };
-
-            // Событие уже триггерится в removeUserNote, но для обратной совместимости
-            // триггерим также og-card:user-note-deleted
-            this.app.workspace.trigger('og-card:user-note-deleted', eventData);
             return;
         }
 
@@ -561,6 +599,36 @@ export class FileLinkService {
      * Обновляет пути во всех структурах и триггерит событие.
      */
     handleFileRename(file: TAbstractFile, oldPath: string): void {
+        const userNoteCardIds = this.indexes.userNoteToCard.get(oldPath);
+        if (userNoteCardIds && userNoteCardIds.size > 0) {
+            // Обновляем все карточки, связанные с пользовательской заметкой
+            for (const cardId of Array.from(userNoteCardIds)) {
+                const cardLinks = this.cardLinksMap.get(cardId);
+                if (!cardLinks) {
+                    continue;
+                }
+
+                const pathIndex = cardLinks.userNotePaths.indexOf(oldPath);
+                if (pathIndex !== -1) {
+                    cardLinks.userNotePaths[pathIndex] = file.path;
+                }
+
+                const eventData: FileRenamedEventData = {
+                    oldPath,
+                    newPath: file.path,
+                    cardId,
+                    fileType: 'userNote'
+                };
+                this.app.workspace.trigger('og-card:file-renamed', eventData);
+            }
+
+            // Обновляем индекс один раз
+            this.indexes.userNoteToCard.delete(oldPath);
+            this.indexes.userNoteToCard.set(file.path, new Set(userNoteCardIds));
+            this.saveData();
+            return;
+        }
+
         const fileInfo = this.findFileLink(oldPath);
 
         // Если файл не связан с карточками — ничего не делаем
@@ -575,18 +643,6 @@ export class FileLinkService {
 
         // Обновляем пути в зависимости от типа файла
         switch (fileInfo.fileType) {
-            case 'userNote':
-                // Находим индекс пути в массиве
-                const pathIndex = cardLinks.userNotePaths.indexOf(oldPath);
-                if (pathIndex !== -1) {
-                    // Обновляем индекс
-                    this.indexes.userNoteToCard.delete(oldPath);
-                    this.indexes.userNoteToCard.set(file.path, fileInfo.cardId);
-                    // Обновляем путь в массиве
-                    cardLinks.userNotePaths[pathIndex] = file.path;
-                }
-                break;
-
             case 'generatedNote':
                 // Обновляем индекс
                 this.indexes.generatedNoteToCard.delete(oldPath);
@@ -602,9 +658,22 @@ export class FileLinkService {
                     this.indexes.imageToCards.delete(oldPath);
                     this.indexes.imageToCards.set(file.path, imageCardIds);
                 }
-                // Обновляем связь в CardLinks для текущей карточки
-                cardLinks.imagePaths.delete(oldPath);
-                cardLinks.imagePaths.add(file.path);
+
+                // Обновляем связь в CardLinks для всех карточек, использующих это изображение
+                if (imageCardIds && imageCardIds.size > 0) {
+                    for (const imageCardId of imageCardIds) {
+                        const imageCardLinks = this.cardLinksMap.get(imageCardId);
+                        if (!imageCardLinks) {
+                            continue;
+                        }
+                        imageCardLinks.imagePaths.delete(oldPath);
+                        imageCardLinks.imagePaths.add(file.path);
+                    }
+                } else {
+                    // Fallback для обратной совместимости
+                    cardLinks.imagePaths.delete(oldPath);
+                    cardLinks.imagePaths.add(file.path);
+                }
                 break;
         }
 
@@ -678,7 +747,12 @@ export class FileLinkService {
 
             // Восстанавливаем индексы для всех путей
             for (const userNotePath of userNotePaths) {
-                this.indexes.userNoteToCard.set(userNotePath, cardId);
+                let cardIds = this.indexes.userNoteToCard.get(userNotePath);
+                if (!cardIds) {
+                    cardIds = new Set();
+                    this.indexes.userNoteToCard.set(userNotePath, cardIds);
+                }
+                cardIds.add(cardId);
             }
 
             if (linksJSON.generatedNotePath) {

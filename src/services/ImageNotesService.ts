@@ -34,6 +34,17 @@ export class ImageNotesService {
         try {
             const localPaths = this.extractLocalImagePaths(cardHtml);
 
+            // Синхронизируем связи изображений: удаляем устаревшие пути
+            const existingLinks = this.fileLinkService.getCardLinks(cardId);
+            if (existingLinks) {
+                const nextPathSet = new Set(localPaths);
+                for (const existingPath of existingLinks.imagePaths) {
+                    if (!nextPathSet.has(existingPath)) {
+                        this.fileLinkService.removeImage(cardId, existingPath);
+                    }
+                }
+            }
+
             if (localPaths.length === 0) {
                 // Локальных изображений нет - удаляем заметку
                 await this.deleteNote(cardId);

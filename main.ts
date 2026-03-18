@@ -2,6 +2,7 @@ import { Plugin, Editor, MarkdownView, Notice, TFile, TAbstractFile, EventRef } 
 import { t } from "./i18n";
 import { OpenGraphSettings, DEFAULT_SETTINGS, FileLinksData, FileDeletedEventData, FileRenamedEventData, CardLinks, UserNoteEventData } from './src/types';
 import { PluginContext } from './src/core/PluginContext';
+import { PluginDataRepository } from './src/services/PluginDataRepository';
 import { parserRegistry } from './src/parsers';
 import { CardData, ScreenshotData } from './src/types';
 import { ContextMenuHandler, CardInfo, UrlInfo } from './src/ui';
@@ -34,8 +35,14 @@ export default class OpenGraphPlugin extends Plugin {
     private fileLinksData: FileLinksData = DEFAULT_FILE_LINKS_DATA;
     private context!: PluginContext;
     private contextMenuHandler!: ContextMenuHandler;
+    private dataRepository!: PluginDataRepository;
 
     async onload() {
+        this.dataRepository = new PluginDataRepository(
+            this.loadData.bind(this),
+            this.saveData.bind(this)
+        );
+
         await this.loadSettings();
         await this.loadFileLinksData();
 
@@ -91,36 +98,36 @@ export default class OpenGraphPlugin extends Plugin {
     }
 
     async loadSettings() {
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+        this.settings = await this.dataRepository.loadSettings(DEFAULT_SETTINGS);
     }
 
     async saveSettings() {
-        await this.saveData(this.settings);
+        await this.dataRepository.saveSettings(this.settings);
     }
 
     /**
      * Загружает данные связей файлов из data.json
      */
     private async loadFileLinksData(): Promise<void> {
-        const data = await this.loadData();
-        if (data?.fileLinks) {
+        const fileLinks = await this.dataRepository.loadFileLinks();
+        if (fileLinks) {
             // Миграция: если fileLinks содержит карточки напрямую (без cardLinks)
             let cardLinks: Record<string, any> = {};
-            if (data.fileLinks.cardLinks) {
+            if (fileLinks.cardLinks) {
                 // Новый формат
-                cardLinks = data.fileLinks.cardLinks;
+                cardLinks = fileLinks.cardLinks;
             } else {
                 // Старый формат - карточки напрямую в fileLinks
                 // Проверяем есть ли поля которые выглядят как cardId (начинаются с og_)
-                for (const key of Object.keys(data.fileLinks)) {
+                for (const key of Object.keys(fileLinks)) {
                     if (key.startsWith('og_')) {
-                        cardLinks[key] = data.fileLinks[key];
+                        cardLinks[key] = fileLinks[key];
                     }
                 }
             }
 
             this.fileLinksData = {
-                version: data.fileLinks.version ?? 1,
+                version: fileLinks.version ?? 1,
                 cardLinks: cardLinks
             };
         }
@@ -137,12 +144,10 @@ export default class OpenGraphPlugin extends Plugin {
      * Сохраняет данные связей файлов в data.json
      */
     async saveFileLinksData(): Promise<void> {
-        const data = await this.loadData() ?? {};
-        data.fileLinks = {
+        await this.dataRepository.saveFileLinks({
             version: 1,
             cardLinks: this.context?.fileLinkService?.getSerializedData() ?? {}
-        };
-        await this.saveData(data);
+        });
     }
 
     /**

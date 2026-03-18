@@ -14,8 +14,8 @@ export interface CardLinks {
  * Обратные индексы для O(1) поиска
  */
 export interface FileLinkIndexes {
-    /** путь файла → card-id (для пользовательских заметок) */
-    userNoteToCard: Map<string, string>;
+    /** путь файла → Set<card-id> (для пользовательских заметок, один ко многим) */
+    userNoteToCard: Map<string, Set<string>>;
     /** путь файла → card-id (для сгенерированных заметок) */
     generatedNoteToCard: Map<string, string>;
     /** путь файла → Set<card-id> (для изображений, один ко многим) */

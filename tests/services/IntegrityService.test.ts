@@ -73,8 +73,7 @@ describe('IntegrityService', () => {
     it('should call checkIntegrity via onLayoutReady', () => {
       const service = new IntegrityService(
         mockApp as any,
-        mockFileLinkService,
-        mockImageNotesService
+        mockFileLinkService
       );
 
       mockFileLinkService.getAllCardIds.mockReturnValue([]);

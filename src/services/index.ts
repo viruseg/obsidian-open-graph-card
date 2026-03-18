@@ -4,3 +4,4 @@ export { ImageService } from './ImageService';
 export { ImageNotesService } from './ImageNotesService';
 export { CardCopyService } from './CardCopyService';
 export { IntegrityService } from './IntegrityService';
+export { PluginDataRepository } from './PluginDataRepository';

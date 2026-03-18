@@ -270,8 +270,34 @@ describe('CardCopyService', () => {
       service.suspendProcessing();
       service.resumeProcessing();
 
-      // Не должно выбросить ошибку
-      expect(true).toBe(true);
+      service.initialize();
+
+      const handlers = mockApp.workspace.on.mock.calls;
+      const changeHandler = handlers.find((c: any[]) => c[0] === 'editor-change')?.[1];
+      expect(changeHandler).toBeDefined();
+
+      const mockEditor = {
+        getValue: jest.fn(),
+        setValue: jest.fn()
+      } as any;
+
+      const mockChange = {
+        from: { line: 0, ch: 0 },
+        text: '<div class="og-card" card-id="x"><!--og-card-end x--></div>'
+      } as any;
+
+      // В режиме suspend обработка не запускается
+      service.suspendProcessing();
+      changeHandler.call(service, mockEditor, mockChange);
+      expect(mockEditor.getValue).not.toHaveBeenCalled();
+
+      // После resume обработка запускается
+      mockApp.workspace.getActiveFile.mockReturnValue(createMockTFile('note.md'));
+      mockFileLinkService.getCardLinks.mockReturnValue(null);
+      (extractCardId as jest.Mock).mockReturnValue('x');
+      service.resumeProcessing();
+      changeHandler.call(service, mockEditor, mockChange);
+      expect(mockEditor.getValue).toHaveBeenCalled();
     });
   });
 
@@ -314,111 +340,9 @@ describe('CardCopyService', () => {
   });
 
   // ========================================
-  // Тесты для FileLinkService integration
-  // ========================================
-  describe('FileLinkService integration', () => {
-    it('should have access to FileLinkService methods', () => {
-      const service = new CardCopyService(
-        mockApp,
-        mockFileLinkService,
-        mockImageService,
-        mockImageNotesService
-      );
-
-      // Проверяем что мок имеет нужные методы
-      expect(mockFileLinkService.registerCard).toBeDefined();
-      expect(mockFileLinkService.getCardLinks).toBeDefined();
-      expect(mockFileLinkService.addImage).toBeDefined();
-    });
-
-    it('should call getCardLinks with correct cardId when checking existing cards', async () => {
-      const service = new CardCopyService(
-        mockApp,
-        mockFileLinkService,
-        mockImageService,
-        mockImageNotesService
-      );
-
-      // Настраиваем мок
-      mockFileLinkService.getCardLinks.mockReturnValue({
-        userNotePaths: ['other-note.md'],
-        generatedNotePath: null,
-        imagePaths: new Set()
-      });
-
-      // Вызываем метод
-      const links = mockFileLinkService.getCardLinks('test-card-id');
-
-      expect(links).toBeDefined();
-      expect(links.userNotePaths).toContain('other-note.md');
-    });
-  });
-
-  // ========================================
-  // Тесты для ImageNotesService integration
-  // ========================================
-  describe('ImageNotesService integration', () => {
-    it('should have access to ImageNotesService methods', () => {
-      const service = new CardCopyService(
-        mockApp,
-        mockFileLinkService,
-        mockImageService,
-        mockImageNotesService
-      );
-
-      // Проверяем что мок имеет нужные методы
-      expect(mockImageNotesService.syncNote).toBeDefined();
-      expect(mockImageNotesService.deleteNote).toBeDefined();
-    });
-  });
-
-  // ========================================
-  // Тесты для html utils integration
-  // ========================================
-  describe('html utils integration', () => {
-    it('should call extractCardId mock', () => {
-      (extractCardId as jest.Mock).mockReturnValue('test-card-id');
-
-      const cardHtml = '<div class="og-card" card-id="test-card-id"></div>';
-      const result = extractCardId(cardHtml);
-
-      expect(result).toBe('test-card-id');
-    });
-
-    it('should call getImageDataUrlsFromCard mock', () => {
-      (getImageDataUrlsFromCard as jest.Mock).mockReturnValue([
-        { src: 'image.png', dataUrl: 'http://example.com/image.png', elementIndex: 0 }
-      ]);
-
-      const cardHtml = '<div class="og-card"><img src="image.png" /></div>';
-      const result = getImageDataUrlsFromCard(cardHtml);
-
-      expect(result).toHaveLength(1);
-      expect(result[0].src).toBe('image.png');
-    });
-
-    it('should call replaceImageInCard mock', () => {
-      (replaceImageInCard as jest.Mock).mockReturnValue('<div class="og-card"><img src="new-image.png" /></div>');
-
-      const cardHtml = '<div class="og-card"><img src="old-image.png" /></div>';
-      const result = replaceImageInCard(cardHtml, 0, 'new-image.png', 'http://example.com/new.png');
-
-      expect(result).toContain('new-image.png');
-    });
-  });
-
-  // ========================================
   // Тесты для id generator integration
   // ========================================
   describe('id generator integration', () => {
-    it('should call generateCardId mock', () => {
-      (generateCardId as jest.Mock).mockReturnValue('og_1234567890_abcdefgh');
-
-      const result = generateCardId();
-
-      expect(result).toBe('og_1234567890_abcdefgh');
-    });
-
     it('should generate unique ids on each call', () => {
       (generateCardId as jest.Mock)
         .mockReturnValueOnce('og_1234567890_abcdefgh')
@@ -451,54 +375,6 @@ describe('CardCopyService', () => {
 
       expect(file).toBeDefined();
       expect(file?.path).toBe('note.md');
-    });
-  });
-
-  // ========================================
-  // Тесты для card detection regex
-  // ========================================
-  describe('card detection', () => {
-    it('should match valid card HTML', () => {
-      const cardHtml = '<div class="og-card" card-id="test">content<!--og-card-end test--></div>';
-
-      // Проверяем что HTML содержит оба маркера
-      expect(cardHtml).toContain('og-card');
-      expect(cardHtml).toContain('og-card-end');
-    });
-
-    it('should not match plain text', () => {
-      const plainText = 'This is just plain text without any card markers';
-
-      expect(plainText).not.toContain('og-card');
-      expect(plainText).not.toContain('og-card-end');
-    });
-
-    it('should not match partial card HTML', () => {
-      const partialHtml = '<div class="og-card">content without end marker</div>';
-
-      expect(partialHtml).toContain('og-card');
-      expect(partialHtml).not.toContain('og-card-end');
-    });
-  });
-
-  // ========================================
-  // Тесты для card-id replacement
-  // ========================================
-  describe('card-id replacement', () => {
-    it('should replace card-id in attribute', () => {
-      const oldHtml = '<div class="og-card" card-id="old-id">content</div>';
-      const newHtml = oldHtml.replace('card-id="old-id"', 'card-id="new-id"');
-
-      expect(newHtml).toContain('card-id="new-id"');
-      expect(newHtml).not.toContain('card-id="old-id"');
-    });
-
-    it('should replace card-id in end marker', () => {
-      const oldHtml = '<div>content<!--og-card-end old-id--></div>';
-      const newHtml = oldHtml.replace('<!--og-card-end old-id-->', '<!--og-card-end new-id-->');
-
-      expect(newHtml).toContain('<!--og-card-end new-id-->');
-      expect(newHtml).not.toContain('<!--og-card-end old-id-->');
     });
   });
 

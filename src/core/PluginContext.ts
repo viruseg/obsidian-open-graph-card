@@ -7,6 +7,15 @@ import { FileLinkService } from '../services/FileLinkService';
 import { CardCopyService } from '../services/CardCopyService';
 import { IntegrityService } from '../services/IntegrityService';
 
+interface PluginContextOverrides {
+    fetchService?: FetchService;
+    imageService?: ImageService;
+    imageNotesService?: ImageNotesService;
+    fileLinkService?: FileLinkService;
+    cardCopyService?: CardCopyService;
+    integrityService?: IntegrityService;
+}
+
 /**
  * Dependency Injection контейнер для сервисов плагина
  */
@@ -39,32 +48,29 @@ export class PluginContext {
         app: App,
         getSettings: () => OpenGraphSettings,
         getFileLinksData: () => FileLinksData,
-        saveFileLinksData: () => Promise<void>
+        saveFileLinksData: () => Promise<void>,
+        overrides: PluginContextOverrides = {}
     ) {
         this.app = app;
         this.getSettings = getSettings;
 
         // Инициализация сервисов
-        this.fetchService = new FetchService();
-        this.imageService = new ImageService(app, this.fetchService);
-        this.fileLinkService = new FileLinkService(app, getFileLinksData, saveFileLinksData);
+        this.fetchService = overrides.fetchService ?? new FetchService();
+        this.fileLinkService = overrides.fileLinkService ?? new FileLinkService(app, getFileLinksData, saveFileLinksData);
+        this.imageService = overrides.imageService ?? new ImageService(app, this.fetchService);
 
         // Устанавливаем FileLinkService в ImageService для проверки ссылок
         this.imageService.setFileLinkService(this.fileLinkService);
 
-        this.imageNotesService = new ImageNotesService(app, this.imageService, this.fileLinkService);
+        this.imageNotesService = overrides.imageNotesService ?? new ImageNotesService(app, this.imageService, this.fileLinkService);
 
         // Инициализация новых сервисов
-        this.cardCopyService = new CardCopyService(
+        this.cardCopyService = overrides.cardCopyService ?? new CardCopyService(
             app,
             this.fileLinkService,
             this.imageService,
             this.imageNotesService
         );
-        this.integrityService = new IntegrityService(
-            app,
-            this.fileLinkService,
-            this.imageNotesService
-        );
+        this.integrityService = overrides.integrityService ?? new IntegrityService(app, this.fileLinkService);
     }
 }

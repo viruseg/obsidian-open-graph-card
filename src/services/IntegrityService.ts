@@ -44,12 +44,12 @@ export class IntegrityService {
     /**
      * @param app - экземпляр приложения Obsidian
      * @param fileLinkService - сервис для отслеживания связей между файлами
-     * @param imageNotesService - сервис для управления заметками с изображениями
+     * @param _imageNotesService - устаревшая зависимость (сохранена для обратной совместимости)
      */
     constructor(
         private app: App,
         private fileLinkService: FileLinkService,
-        private imageNotesService: ImageNotesService
+        _imageNotesService?: ImageNotesService
     ) {}
 
     /**
