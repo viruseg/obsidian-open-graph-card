@@ -203,7 +203,7 @@ export class ImageService {
      * @param cardHtml - HTML-код карточки
      * @returns результат операции восстановления
      */
-    async restoreCardImages(cardHtml: string): Promise<{ result: ImageRestoreResult; updatedHtml: string }> {
+    async restoreCardImages(cardHtml: string, cardId: string): Promise<{ result: ImageRestoreResult; updatedHtml: string }> {
         const imageData = getImageDataUrlsFromCard(cardHtml);
         const errors: string[] = [];
         let restoredCount = 0;
@@ -215,7 +215,13 @@ export class ImageService {
 
             try {
                 // Удаляем локальный файл только если нет ссылок от других карточек
-                if (!this.fileLinkService || !this.fileLinkService.hasImageReferences(img.src)) {
+                const hasReferencesFromOtherCards = this.fileLinkService
+                    ? (cardId
+                        ? this.fileLinkService.hasImageReferencesExcludingCard(img.src, cardId)
+                        : this.fileLinkService.hasImageReferences(img.src))
+                    : false;
+
+                if (!hasReferencesFromOtherCards) {
                     const file = this.app.vault.getAbstractFileByPath(img.src);
                     if (file instanceof TFile) {
                         await this.app.vault.delete(file);

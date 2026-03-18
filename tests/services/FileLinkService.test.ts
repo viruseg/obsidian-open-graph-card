@@ -705,6 +705,45 @@ describe('FileLinkService', () => {
       expect(links?.imagePaths.has('image1.png')).toBe(true);
       expect(links?.imagePaths.has('image2.png')).toBe(true);
     });
+
+    it('should detect references excluding current card when another card uses image', () => {
+      const service = new FileLinkService(
+        mockApp as any,
+        () => mockData,
+        saveDataMock
+      );
+
+      service.registerCard('card1', 'note1.md');
+      service.registerCard('card2', 'note2.md');
+      service.addImage('card1', 'shared.png');
+      service.addImage('card2', 'shared.png');
+
+      expect(service.hasImageReferencesExcludingCard('shared.png', 'card1')).toBe(true);
+      expect(service.hasImageReferencesExcludingCard('shared.png', 'card2')).toBe(true);
+    });
+
+    it('should return false for references excluding current card when image belongs only to current card', () => {
+      const service = new FileLinkService(
+        mockApp as any,
+        () => mockData,
+        saveDataMock
+      );
+
+      service.registerCard('card1', 'note1.md');
+      service.addImage('card1', 'exclusive.png');
+
+      expect(service.hasImageReferencesExcludingCard('exclusive.png', 'card1')).toBe(false);
+    });
+
+    it('should return false for references excluding current card when image is missing', () => {
+      const service = new FileLinkService(
+        mockApp as any,
+        () => mockData,
+        saveDataMock
+      );
+
+      expect(service.hasImageReferencesExcludingCard('missing.png', 'card1')).toBe(false);
+    });
   });
 
   // ========================================

@@ -481,6 +481,24 @@ export class FileLinkService {
     }
 
     /**
+     * Проверяет, есть ли ссылки на изображение от карточек, кроме указанной.
+     */
+    hasImageReferencesExcludingCard(imagePath: string, excludedCardId: string): boolean {
+        const cardIds = this.indexes.imageToCards.get(imagePath);
+        if (!cardIds || cardIds.size === 0) {
+            return false;
+        }
+
+        for (const cardId of cardIds) {
+            if (cardId !== excludedCardId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Возвращает все зарегистрированные card-id.
      */
     getAllCardIds(): string[] {

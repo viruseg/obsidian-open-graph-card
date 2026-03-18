@@ -298,7 +298,7 @@ export class ContextMenuHandler {
             let result;
             let updatedHtml: string;
             try {
-                const restoreResult = await this.context.imageService.restoreCardImages(cardHtml);
+                const restoreResult = await this.context.imageService.restoreCardImages(cardHtml, cardId || '');
                 result = restoreResult.result;
                 updatedHtml = restoreResult.updatedHtml;
             } finally {
