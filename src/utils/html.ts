@@ -1,8 +1,39 @@
 /**
- * Утилиты для работы с HTML
+ * Утилиты для работы с HTML карточек через DOMParser
  */
 
 import { ImageDataUrlInfo } from '../types';
+import { CARD_REGEX } from './constants';
+
+/**
+ * Парсит HTML-код карточки и возвращает Document и элемент карточки
+ * @param html - HTML-код карточки
+ * @returns объект с Document и элементом карточки, или null если парсинг не удался
+ */
+export function parseCardHtml(html: string): { doc: Document; card: HTMLElement } | null {
+    if (!html || html.trim() === '') {
+        return null;
+    }
+
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const card = doc.querySelector('.og-card') as HTMLElement | null;
+
+    if (!card) {
+        return null;
+    }
+
+    return { doc, card };
+}
+
+/**
+ * Сериализует элемент карточки обратно в HTML-строку
+ * @param card - элемент карточки
+ * @returns HTML-строка
+ */
+export function serializeCard(card: HTMLElement): string {
+    return card.outerHTML;
+}
 
 /**
  * Экранирует специальные HTML символы
@@ -26,8 +57,12 @@ export function escapeHTML(str: string): string {
  * @returns card-id или null, если не найден
  */
 export function extractCardId(html: string): string | null {
-    const match = html.match(/<div class="og-card[^"]*"\s+card-id="([^"]+)"/);
-    return match ? match[1] : null;
+    const parsed = parseCardHtml(html);
+    if (!parsed) {
+        return null;
+    }
+
+    return parsed.card.getAttribute('card-id');
 }
 
 /**
@@ -36,8 +71,13 @@ export function extractCardId(html: string): string | null {
  * @returns URL или null, если не найден
  */
 export function extractUrl(html: string): string | null {
-    const match = html.match(/<div class="og-url"><a href="([^"]+)">/);
-    return match ? match[1] : null;
+    const parsed = parseCardHtml(html);
+    if (!parsed) {
+        return null;
+    }
+
+    const link = parsed.card.querySelector('.og-url a');
+    return link ? link.getAttribute('href') : null;
 }
 
 /**
@@ -46,9 +86,13 @@ export function extractUrl(html: string): string | null {
  * @returns пользовательский текст или пустая строка
  */
 export function extractUserText(html: string): string {
-    const userTextRegex = /<div class="og-user-text">([\s\S]*?)<\/div>(?:\s*)(?:<|\\x3C)!--og-user-text-end-->/i;
-    const match = html.match(userTextRegex);
-    return match ? match[1].trim() : '';
+    const parsed = parseCardHtml(html);
+    if (!parsed) {
+        return '';
+    }
+
+    const userTextDiv = parsed.card.querySelector('.og-user-text');
+    return userTextDiv ? userTextDiv.textContent?.trim() || '' : '';
 }
 
 /**
@@ -57,7 +101,12 @@ export function extractUserText(html: string): string {
  * @returns true, если карточка вертикальная
  */
 export function isVerticalCard(html: string): boolean {
-    return html.includes('og-card-vertical');
+    const parsed = parseCardHtml(html);
+    if (!parsed) {
+        return false;
+    }
+
+    return parsed.card.classList.contains('og-card-vertical');
 }
 
 /**
@@ -66,18 +115,21 @@ export function isVerticalCard(html: string): boolean {
  * @returns массив путей/URL из атрибутов src
  */
 export function getImageSourcesFromCard(html: string): string[] {
-    const sources: string[] = [];
-    // Ищем все img теги с классом og-image или og-screenshot (порядок атрибутов может быть любым)
-    const imgRegex = /<img[^>]*class="og-(?:image|screenshot)"[^>]*>/gi;
-    const srcRegex = /src="([^"]+)"/i;
-
-    let imgMatch;
-    while ((imgMatch = imgRegex.exec(html)) !== null) {
-        const srcMatch = srcRegex.exec(imgMatch[0]);
-        if (srcMatch) {
-            sources.push(srcMatch[1]);
-        }
+    const parsed = parseCardHtml(html);
+    if (!parsed) {
+        return [];
     }
+
+    const images = parsed.card.querySelectorAll('img.og-image, img.og-screenshot');
+    const sources: string[] = [];
+
+    images.forEach(img => {
+        const src = img.getAttribute('src');
+        if (src) {
+            sources.push(src);
+        }
+    });
+
     return sources;
 }
 
@@ -87,28 +139,27 @@ export function getImageSourcesFromCard(html: string): string[] {
  * @returns массив информации об изображениях с их data-url
  */
 export function getImageDataUrlsFromCard(html: string): ImageDataUrlInfo[] {
+    const parsed = parseCardHtml(html);
+    if (!parsed) {
+        return [];
+    }
+
+    const images = parsed.card.querySelectorAll('img.og-image, img.og-screenshot');
     const result: ImageDataUrlInfo[] = [];
-    // Ищем все img теги с классом og-image или og-screenshot
-    const imgRegex = /<img[^>]*class="og-(?:image|screenshot)"[^>]*>/gi;
-    const srcRegex = /src="([^"]+)"/i;
-    const dataUrlRegex = /data-url="([^"]+)"/i;
 
-    let elementIndex = 0;
-    let imgMatch;
-    while ((imgMatch = imgRegex.exec(html)) !== null) {
-        const imgTag = imgMatch[0];
-        const srcMatch = srcRegex.exec(imgTag);
-        const dataUrlMatch = dataUrlRegex.exec(imgTag);
+    images.forEach((img, index) => {
+        const src = img.getAttribute('src');
+        const dataUrl = img.getAttribute('data-url');
 
-        if (srcMatch) {
+        if (src) {
             result.push({
-                elementIndex: elementIndex,
-                src: srcMatch[1],
-                dataUrl: dataUrlMatch ? dataUrlMatch[1] : null
+                elementIndex: index,
+                src,
+                dataUrl: dataUrl || null
             });
         }
-        elementIndex++;
-    }
+    });
+
     return result;
 }
 
@@ -126,38 +177,201 @@ export function replaceImageInCard(
     newSrc: string,
     dataUrl?: string | null
 ): string {
-    const imgRegex = /<img([^>]*class="og-(?:image|screenshot)"[^>]*?)\s*\/?>/gi;
-    let currentIndex = 0;
+    const parsed = parseCardHtml(html);
+    if (!parsed) {
+        return html;
+    }
 
-    return html.replace(imgRegex, (fullMatch: string, attrs: string) => {
-        if (currentIndex !== elementIndex) {
-            currentIndex++;
-            return fullMatch;
+    const images = parsed.card.querySelectorAll('img.og-image, img.og-screenshot');
+    const targetImg = images[elementIndex] as HTMLImageElement | undefined;
+
+    if (!targetImg) {
+        return html;
+    }
+
+    targetImg.setAttribute('src', newSrc);
+
+    if (dataUrl === null) {
+        targetImg.removeAttribute('data-url');
+    } else if (dataUrl !== undefined) {
+        targetImg.setAttribute('data-url', dataUrl);
+    }
+
+    return serializeCard(parsed.card);
+}
+
+/**
+ * Извлекает заголовок из HTML карточки
+ * @param html - HTML-код карточки
+ * @returns заголовок или пустая строка
+ */
+export function extractTitle(html: string): string {
+    const parsed = parseCardHtml(html);
+    if (!parsed) {
+        return '';
+    }
+
+    const titleDiv = parsed.card.querySelector('.og-title');
+    return titleDiv ? titleDiv.textContent?.trim() || '' : '';
+}
+
+/**
+ * Извлекает описание из HTML карточки
+ * @param html - HTML-код карточки
+ * @returns описание или пустая строка
+ */
+export function extractDescription(html: string): string {
+    const parsed = parseCardHtml(html);
+    if (!parsed) {
+        return '';
+    }
+
+    const descDiv = parsed.card.querySelector('.og-description');
+    return descDiv ? descDiv.textContent?.trim() || '' : '';
+}
+
+/**
+ * Добавляет или обновляет пользовательский текст в карточке
+ * @param html - HTML-код карточки
+ * @param text - текст для добавления/обновления
+ * @returns модифицированный HTML-код карточки
+ */
+export function updateUserText(html: string, text: string): string {
+    const parsed = parseCardHtml(html);
+    if (!parsed) {
+        return html;
+    }
+
+    const existingUserText = parsed.card.querySelector('.og-user-text');
+    const existingEndMarker = parsed.card.querySelector('comment[data-type="og-user-text-end"]');
+
+    if (text.trim() === '') {
+        if (existingUserText) {
+            existingUserText.remove();
         }
-        currentIndex++;
+        return serializeCard(parsed.card);
+    }
 
-        // Заменяем src
-        let newAttrs = attrs.replace(/src="[^"]*"/i, `src="${newSrc}"`);
+    if (existingUserText) {
+        existingUserText.textContent = text;
+    } else {
+        const userTextDiv = parsed.doc.createElement('div');
+        userTextDiv.className = 'og-user-text';
+        userTextDiv.textContent = text;
 
-        // Обрабатываем data-url
-        const hasDataUrl = /data-url="[^"]*"/i.test(newAttrs);
-
-        if (dataUrl === null) {
-            // Удаляем data-url
-            newAttrs = newAttrs.replace(/\s*data-url="[^"]*"/i, '');
-        } else if (dataUrl !== undefined) {
-            // Устанавливаем новый data-url
-            if (hasDataUrl) {
-                newAttrs = newAttrs.replace(/data-url="[^"]*"/i, `data-url="${dataUrl}"`);
-            } else {
-                newAttrs += ` data-url="${dataUrl}"`;
-            }
+        const contentDiv = parsed.card.querySelector('.og-content');
+        if (contentDiv) {
+            contentDiv.appendChild(userTextDiv);
         }
-        // Если dataUrl === undefined, оставляем как есть
+    }
 
-        // Удаляем trailing пробелы и слеши, затем добавляем корректный закрывающий тег
-        newAttrs = newAttrs.replace(/\s*\/\s*$/, '').trimEnd();
+    return serializeCard(parsed.card);
+}
 
-        return `<img${newAttrs} />`;
+/**
+ * Переключает ориентацию карточки (горизонтальная/вертикальная)
+ * @param html - HTML-код карточки
+ * @returns модифицированный HTML-код карточки
+ */
+export function toggleCardOrientation(html: string): string {
+    const parsed = parseCardHtml(html);
+    if (!parsed) {
+        return html;
+    }
+
+    parsed.card.classList.toggle('og-card-vertical');
+
+    return serializeCard(parsed.card);
+}
+
+/**
+ * Заменяет card-id в карточке
+ * @param html - HTML-код карточки
+ * @param newCardId - новый card-id
+ * @returns модифицированный HTML-код карточки
+ */
+export function replaceCardId(html: string, newCardId: string): string {
+    const parsed = parseCardHtml(html);
+    if (!parsed) {
+        return html;
+    }
+
+    parsed.card.setAttribute('card-id', newCardId);
+
+    const iterator = parsed.doc.createNodeIterator(
+        parsed.card,
+        NodeFilter.SHOW_COMMENT
+    );
+
+    let commentNode: Comment | null;
+    while ((commentNode = iterator.nextNode() as Comment | null)) {
+        if (commentNode.textContent?.startsWith('og-card-end')) {
+            commentNode.textContent = `og-card-end ${newCardId}`;
+            break;
+        }
+    }
+
+    return serializeCard(parsed.card);
+}
+
+/**
+ * Находит все карточки в тексте заметки и возвращает их позиции
+ * @param content - полное содержимое заметки
+ * @returns массив объектов с cardId, html, startOffset, endOffset
+ */
+export function findAllCards(content: string): Array<{
+    cardId: string;
+    html: string;
+    startOffset: number;
+    endOffset: number;
+}> {
+    const results: Array<{
+        cardId: string;
+        html: string;
+        startOffset: number;
+        endOffset: number;
+    }> = [];
+
+    CARD_REGEX.lastIndex = 0;
+
+    let match;
+    while ((match = CARD_REGEX.exec(content)) !== null) {
+        const html = match[0];
+        const cardId = extractCardId(html);
+
+        if (cardId) {
+            results.push({
+                cardId,
+                html,
+                startOffset: match.index,
+                endOffset: match.index + html.length
+            });
+        }
+    }
+
+    return results;
+}
+
+/**
+ * Извлекает все теги из карточки
+ * @param html - HTML-код карточки
+ * @returns массив тегов
+ */
+export function extractTags(html: string): string[] {
+    const parsed = parseCardHtml(html);
+    if (!parsed) {
+        return [];
+    }
+
+    const tagElements = parsed.card.querySelectorAll('.og-tag');
+    const tags: string[] = [];
+
+    tagElements.forEach(tagEl => {
+        const tagText = tagEl.textContent?.trim();
+        if (tagText) {
+            tags.push(tagText);
+        }
     });
+
+    return tags;
 }

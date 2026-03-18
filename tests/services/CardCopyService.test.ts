@@ -5,7 +5,11 @@ import { TFile, TFolder, EventRef } from 'obsidian';
 jest.mock('../../src/utils/html', () => ({
   extractCardId: jest.fn(),
   getImageDataUrlsFromCard: jest.fn(),
-  replaceImageInCard: jest.fn()
+  replaceImageInCard: jest.fn(),
+  replaceCardId: jest.fn((html: string, newCardId: string) => {
+    return html.replace(/card-id="[^"]*"/, `card-id="${newCardId}"`)
+               .replace(/<!--og-card-end [^>]*-->/, `<!--og-card-end ${newCardId}-->`);
+  })
 }));
 
 // Мок для generateCardId
@@ -13,7 +17,7 @@ jest.mock('../../src/utils/id', () => ({
   generateCardId: jest.fn()
 }));
 
-import { extractCardId, getImageDataUrlsFromCard, replaceImageInCard } from '../../src/utils/html';
+import { extractCardId, getImageDataUrlsFromCard, replaceImageInCard, replaceCardId } from '../../src/utils/html';
 import { generateCardId } from '../../src/utils/id';
 
 // Мок для App

@@ -26,3 +26,5 @@ export const CARD_BOUNDS = {
     LOOK_DOWN_LINES: 10,
     LOOK_FORWARD_LINES: 20
 } as const;
+
+export const CARD_REGEX = /<div[^>]*class="[^"]*og-card[^"]*"[^>]*>[\s\S]*?<!--og-card-end[^>]*--><\/div>/g;

@@ -8,7 +8,17 @@ import { ContextMenuHandler, CardInfo, UrlInfo } from './src/ui';
 import { SettingsTab } from './src/ui';
 import { HtmlBuilder, ImageData } from './src/builders';
 import { CARD_BOUNDS } from './src/utils/constants';
-import { extractCardId, getImageDataUrlsFromCard, replaceImageInCard } from './src/utils/html';
+import {
+    extractCardId,
+    getImageDataUrlsFromCard,
+    replaceImageInCard,
+    extractUrl,
+    extractUserText,
+    toggleCardOrientation as toggleOrientation,
+    updateUserText,
+    parseCardHtml,
+    serializeCard
+} from './src/utils/html';
 import { generateCardId } from './src/utils/id';
 
 /**
@@ -320,18 +330,15 @@ export default class OpenGraphPlugin extends Plugin {
     }
 
     getCardUnderCursor(editor: Editor, targetLine?: number): CardInfo | null {
-        // Если targetLine пришел из события мыши по DOM, используем его, иначе берём курсор
         const baseLine = targetLine !== undefined ? targetLine : editor.getCursor().line;
 
         let startLine = -1;
         let cardId: string | null = null;
 
-        // 1. Ищем начало карточки поднимаясь вверх по строкам
         for (let i = baseLine; i >= Math.max(0, baseLine - CARD_BOUNDS.LOOK_UP_LINES); i--) {
             const lineText = editor.getLine(i);
             if (lineText.includes('<div class="og-card')) {
                 startLine = i;
-                // Пытаемся извлечь card-id из начала карточки
                 const cardIdMatch = lineText.match(/<div class="og-card[^"]*"\s+card-id="([^"]+)"/);
                 if (cardIdMatch) {
                     cardId = cardIdMatch[1];
@@ -340,13 +347,11 @@ export default class OpenGraphPlugin extends Plugin {
             }
         }
 
-        // 2. Ищем вниз (на случай, если posAtDOM указал чуть выше из-за пустых строк перед блоком)
         if (startLine === -1) {
             for (let i = baseLine + 1; i <= Math.min(editor.lineCount() - 1, baseLine + CARD_BOUNDS.LOOK_DOWN_LINES); i++) {
                 const lineText = editor.getLine(i);
                 if (lineText.includes('<div class="og-card')) {
                     startLine = i;
-                    // Пытаемся извлечь card-id из начала карточки
                     const cardIdMatch = lineText.match(/<div class="og-card[^"]*"\s+card-id="([^"]+)"/);
                     if (cardIdMatch) {
                         cardId = cardIdMatch[1];
@@ -358,7 +363,6 @@ export default class OpenGraphPlugin extends Plugin {
 
         if (startLine === -1) return null;
 
-        // Собираем текст карточки для парсинга (запас вниз 20 строк)
         const maxLookForward = Math.min(editor.lineCount() - 1, startLine + CARD_BOUNDS.LOOK_FORWARD_LINES);
         const lines: string[] =[];
         for (let i = startLine; i <= maxLookForward; i++) {
@@ -366,18 +370,15 @@ export default class OpenGraphPlugin extends Plugin {
         }
         const htmlStr = lines.join('\n');
 
-        // Ищем конец карточки с учётом card-id
         let endRegex = new RegExp(`(?:<|\\\\x3C)!--og-card-end ${cardId}-->(?:\\s*)<\\/div>`, 'i');
         const endMatch = htmlStr.match(endRegex);
 
         if (!endMatch) return null;
 
-        // Вырезаем только ту часть, которая относится к нашей карточке
         const fullCardHtml = htmlStr.substring(0, endMatch.index! + endMatch[0].length);
         const matchedLines = fullCardHtml.split('\n');
         const endLine = startLine + matchedLines.length - 1;
 
-        // Если клик был не по DOM (использовался обычный курсор), проверяем что он реально находится внутри карточки
         if (targetLine === undefined) {
             const cursorLine = editor.getCursor().line;
             if (cursorLine < startLine || cursorLine > endLine) {
@@ -387,20 +388,10 @@ export default class OpenGraphPlugin extends Plugin {
 
         const endCh = matchedLines[matchedLines.length - 1].length;
 
-        // Вытаскиваем URL
-        const urlMatch = fullCardHtml.match(/<div class="og-url"><a href="([^"]+)">/);
-        const url = urlMatch ? urlMatch[1] : null;
-
+        const url = extractUrl(fullCardHtml);
         if (!url) return null;
 
-        // Вытаскиваем пользовательский текст между <div class="og-user-text"> и закрывающим тэгом / комментарием
-        let userText = '';
-        const userTextRegex = /<div class="og-user-text">([\s\S]*?)<\/div>(?:\s*)(?:<|\\x3C)!--og-user-text-end-->/i;
-        const userMatch = fullCardHtml.match(userTextRegex);
-
-        if (userMatch) {
-            userText = userMatch[1].trim();
-        }
+        const userText = extractUserText(fullCardHtml);
 
         const startCh = editor.getLine(startLine).indexOf('<div class="og-card');
 
@@ -519,88 +510,59 @@ export default class OpenGraphPlugin extends Plugin {
     }
 
     async updateCardUserText(editor: Editor, cardInfo: CardInfo, newText: string) {
-        // Получаем текущий HTML карточки
         const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
-
-        // Извлекаем card-id из карточки
         const cardId = extractCardId(cardHtml);
 
-        // Ищем позицию <!--og-card-end--> (с card-id или без) для вставки/обновления пользовательского текста
-        let cardEndMarker: string;
-        let cardEndIndex: number;
-
-        if (cardId) {
-            cardEndMarker = `<!--og-card-end ${cardId}-->`;
-            cardEndIndex = cardHtml.indexOf(cardEndMarker);
-        } else {
-            cardEndIndex = -1;
-        }
-
-        if (cardEndIndex === -1) {
+        const parsed = parseCardHtml(cardHtml);
+        if (!parsed) {
             new Notice(t('cardEndMarkerNotFound'));
             return;
         }
 
         let newCardHtml: string;
 
-        // Проверяем, есть ли уже og-user-text в карточке
-        const userTextRegex = /<div class="og-user-text">[\s\S]*?<\/div>(?:\s*)(?:<|\\x3C)!--og-user-text-end-->/i;
-        const existingUserTextMatch = cardHtml.match(userTextRegex);
-
         if (newText.trim() === '') {
-            // Если текст пустой, удаляем блок og-user-text если он есть
-            if (existingUserTextMatch) {
-                newCardHtml = cardHtml.replace(userTextRegex, '');
+            const existingUserText = parsed.card.querySelector('.og-user-text');
+            if (existingUserText) {
+                existingUserText.remove();
+                newCardHtml = serializeCard(parsed.card);
             } else {
-                return; // Нечего удалять
+                return;
             }
         } else {
-            // Используем HtmlBuilder для генерации блока пользовательского текста
-            const htmlBuilder = new HtmlBuilder(parseInt(cardId || '0'));
+            const htmlBuilder = new HtmlBuilder(cardId || '0');
             const userTextBlock = htmlBuilder.buildUserText(newText);
 
-            if (existingUserTextMatch) {
-                // Заменяем существующий блок
-                newCardHtml = cardHtml.replace(userTextRegex, userTextBlock);
-            } else {
-                // Вставляем новый блок перед </div>, который находится перед <!--og-card-end-->
-                const beforeMarker = cardHtml.substring(0, cardEndIndex);
-                // Ищем последний </div> перед маркером
-                const closingDivIndex = beforeMarker.lastIndexOf('</div>');
-
-                if (closingDivIndex !== -1) {
-                    const beforeDiv = cardHtml.substring(0, closingDivIndex);
-                    const fromDivToEnd = cardHtml.substring(closingDivIndex);
-                    newCardHtml = beforeDiv + userTextBlock + fromDivToEnd;
-                } else {
-                    // Fallback: если </div> не найден, вставляем перед <!--og-card-end-->
-                    const afterMarker = cardHtml.substring(cardEndIndex);
-                    newCardHtml = beforeMarker + userTextBlock + afterMarker;
+            const existingUserText = parsed.card.querySelector('.og-user-text');
+            if (existingUserText) {
+                const tempDiv = parsed.doc.createElement('div');
+                tempDiv.innerHTML = userTextBlock;
+                const newUserTextNode = tempDiv.firstElementChild;
+                if (newUserTextNode) {
+                    existingUserText.replaceWith(newUserTextNode);
                 }
+                newCardHtml = serializeCard(parsed.card);
+            } else {
+                const contentDiv = parsed.card.querySelector('.og-content');
+                if (contentDiv) {
+                    const tempDiv = parsed.doc.createElement('div');
+                    tempDiv.innerHTML = userTextBlock;
+                    while (tempDiv.firstChild) {
+                        contentDiv.appendChild(tempDiv.firstChild);
+                    }
+                }
+                newCardHtml = serializeCard(parsed.card);
             }
         }
 
         editor.replaceRange(newCardHtml, cardInfo.from, cardInfo.to);
-        // Устанавливаем курсор в начало карточки для предотвращения прыжков прокрутки
         editor.setCursor(cardInfo.from);
     }
 
     toggleCardOrientation(editor: Editor, cardInfo: CardInfo) {
         const cardHtml = editor.getRange(cardInfo.from, cardInfo.to);
-        const isVertical = cardHtml.includes('og-card-vertical');
-
-        let newCardHtml: string;
-
-        if (isVertical) {
-            // Удаляем класс og-card-vertical
-            newCardHtml = cardHtml.replace(/<div class="og-card og-card-vertical"/, '<div class="og-card"');
-        } else {
-            // Добавляем класс og-card-vertical
-            newCardHtml = cardHtml.replace(/<div class="og-card"(?=\s+card-id=")/, '<div class="og-card og-card-vertical"');
-        }
-
+        const newCardHtml = toggleOrientation(cardHtml);
         editor.replaceRange(newCardHtml, cardInfo.from, cardInfo.to);
-        // Устанавливаем курсор в начало карточки для предотвращения прыжков прокрутки
         editor.setCursor(cardInfo.from);
     }
 }

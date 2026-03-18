@@ -2,8 +2,9 @@ import { App, Editor, EditorChange, EventRef } from 'obsidian';
 import { FileLinkService } from './FileLinkService';
 import { ImageService } from './ImageService';
 import { ImageNotesService } from './ImageNotesService';
-import { extractCardId, getImageDataUrlsFromCard } from '../utils/html';
+import { extractCardId, getImageDataUrlsFromCard, replaceCardId as replaceCardIdInHtml } from '../utils/html';
 import { generateCardId } from '../utils/id';
+import { CARD_REGEX } from '../utils/constants';
 
 /**
  * Интерфейс для информации об обнаруженной карточке
@@ -29,9 +30,6 @@ interface CutSourceInfo {
  * копирует локальные изображения и обновляет связи.
  */
 export class CardCopyService {
-    /** Regex для поиска HTML-блоков карточек */
-    private readonly CARD_REGEX = /<div[^>]*class="[^"]*og-card[^"]*"[^>]*>[\s\S]*?<!--og-card-end[^>]*-->/g;
-
     /** Защита от двойной обработки */
     private processedChanges: Set<string> = new Set();
 
@@ -79,7 +77,7 @@ export class CardCopyService {
         this.editorCutEventRef = this.app.workspace.on('editor-cut', this.handleCut, this);
 
         // Запускаем периодическую очистку устаревших cutCardIds
-        this.cleanupTimer = setInterval(() => this.cleanupExpiredCutCardIds(), 10000);
+        this.cleanupTimer = setInterval(() => this.cleanupExpiredCutCardIds(), 60000);
     }
 
     /**
@@ -254,7 +252,7 @@ export class CardCopyService {
         }
 
         // Очищаем все cutCardIds при периодической очистке
-        // Если вставка не произошла в течение 10 секунд, считаем операцию отменённой
+        // Если вставка не произошла в течение 60 секунд, считаем операцию отменённой
         if (this.cutCardIds.size > 0) {
             this.cutCardIds.clear();
         }
@@ -390,10 +388,10 @@ export class CardCopyService {
      */
     private detectCards(content: string): DetectedCard[] {
         const cards: DetectedCard[] = [];
-        this.CARD_REGEX.lastIndex = 0;
+        CARD_REGEX.lastIndex = 0;
 
         let match;
-        while ((match = this.CARD_REGEX.exec(content)) !== null) {
+        while ((match = CARD_REGEX.exec(content)) !== null) {
             const html = match[0];
             const cardId = extractCardId(html);
 
@@ -456,29 +454,9 @@ export class CardCopyService {
     }
 
     /**
-     * Заменяет card-id в HTML
+     * Заменяет card-id в HTML через DOMParser
      */
     private replaceCardId(html: string, oldCardId: string, newCardId: string): string {
-        // Заменяем в атрибуте card-id
-        let result = html.replace(
-            new RegExp(`card-id="${this.escapeRegex(oldCardId)}"`, 'g'),
-            `card-id="${newCardId}"`
-        );
-
-        // Заменяем в маркере конца карточки
-        result = result.replace(
-            new RegExp(`<!--og-card-end ${this.escapeRegex(oldCardId)}-->`, 'g'),
-            `<!--og-card-end ${newCardId}-->`
-        );
-
-        return result;
+        return replaceCardIdInHtml(html, newCardId);
     }
-
-    /**
-     * Экранирует специальные символы для использования в regex
-     */
-    private escapeRegex(str: string): string {
-        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    }
-
 }
