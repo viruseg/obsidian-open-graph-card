@@ -24,6 +24,7 @@ import { generateCardId } from '../../src/utils/id';
 const createMockApp = (): any => ({
   vault: {
     getAbstractFileByPath: jest.fn(),
+    cachedRead: jest.fn(),
     readBinary: jest.fn(),
     create: jest.fn(),
     createFolder: jest.fn(),
@@ -32,7 +33,8 @@ const createMockApp = (): any => ({
   workspace: {
     on: jest.fn().mockReturnValue({} as EventRef),
     offref: jest.fn(),
-    getActiveFile: jest.fn()
+    getActiveFile: jest.fn(),
+    getLeavesOfType: jest.fn().mockReturnValue([])
   }
 });
 
@@ -642,6 +644,134 @@ describe('CardCopyService', () => {
 
       // Должен быть вызван registerCard для новой карточки
       expect(mockFileLinkService.registerCard).toHaveBeenCalledWith(newCardId, 'cut-paste-note.md');
+    });
+
+    it('should keep cut source tracking after source editor change and remove source link on paste to another note', async () => {
+      const service = new CardCopyService(
+        mockApp,
+        mockFileLinkService,
+        mockImageService,
+        mockImageNotesService
+      );
+
+      const originalCardId = 'og_cut_long_wait';
+      const newCardId = 'og_cut_long_wait_copy';
+
+      mockFileLinkService.getCardLinks.mockReturnValue({
+        userNotePaths: ['source-note.md'],
+        generatedNotePath: null,
+        imagePaths: new Set()
+      });
+
+      (extractCardId as jest.Mock).mockReturnValue(originalCardId);
+      (getImageDataUrlsFromCard as jest.Mock).mockReturnValue([]);
+      (generateCardId as jest.Mock).mockReturnValue(newCardId);
+
+      service['cutCardIds'].add(originalCardId);
+      service['cutSourceNote'] = {
+        cardId: originalCardId,
+        notePath: 'source-note.md'
+      };
+
+      const sourceEditor = {
+        getValue: jest.fn().mockReturnValue('')
+      };
+      await service['processCardsInEditor'](sourceEditor as any, 'source-note.md');
+
+      const cardHtml = `<div class="og-card" card-id="${originalCardId}">content<!--og-card-end ${originalCardId}--></div>`;
+      const mockEditor = {
+        getValue: jest.fn().mockReturnValue(cardHtml),
+        setValue: jest.fn()
+      };
+
+      await service['processCardsInEditor'](mockEditor as any, 'target-note.md');
+
+      expect(mockFileLinkService.removeUserNote).toHaveBeenCalledWith(originalCardId, 'source-note.md');
+    });
+
+    it('should remove source link when card moved to another note even without editor-cut event', async () => {
+      const service = new CardCopyService(
+        mockApp,
+        mockFileLinkService,
+        mockImageService,
+        mockImageNotesService
+      );
+
+      const originalCardId = 'og_moved_without_cut';
+      const newCardId = 'og_moved_without_cut_copy';
+
+      mockFileLinkService.getCardLinks.mockReturnValue({
+        userNotePaths: ['source-note.md'],
+        generatedNotePath: null,
+        imagePaths: new Set()
+      });
+
+      const sourceFile = new (TFile as any)('source-note.md');
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(sourceFile);
+      mockApp.vault.cachedRead.mockResolvedValue('source file without card');
+
+      (extractCardId as jest.Mock).mockReturnValue(originalCardId);
+      (getImageDataUrlsFromCard as jest.Mock).mockReturnValue([]);
+      (generateCardId as jest.Mock).mockReturnValue(newCardId);
+
+      const cardHtml = `<div class="og-card" card-id="${originalCardId}">content<!--og-card-end ${originalCardId}--></div>`;
+      const targetEditor = {
+        getValue: jest.fn().mockReturnValue(cardHtml),
+        setValue: jest.fn()
+      };
+
+      await service['processCardsInEditor'](targetEditor as any, 'target-note.md');
+
+      expect(mockFileLinkService.removeUserNote).toHaveBeenCalledWith(originalCardId, 'source-note.md');
+    });
+
+    it('should use open source editor content instead of cached file content when checking moved card', async () => {
+      const service = new CardCopyService(
+        mockApp,
+        mockFileLinkService,
+        mockImageService,
+        mockImageNotesService
+      );
+
+      const originalCardId = 'og_moved_from_unsaved_source';
+      const newCardId = 'og_moved_from_unsaved_source_copy';
+
+      mockFileLinkService.getCardLinks.mockReturnValue({
+        userNotePaths: ['source-note.md'],
+        generatedNotePath: null,
+        imagePaths: new Set()
+      });
+
+      const sourceFile = new (TFile as any)('source-note.md');
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(sourceFile);
+      mockApp.vault.cachedRead.mockResolvedValue(
+        `<div class="og-card" card-id="${originalCardId}">stale<!--og-card-end ${originalCardId}--></div>`
+      );
+
+      mockApp.workspace.getLeavesOfType.mockReturnValue([
+        {
+          view: {
+            file: sourceFile,
+            editor: {
+              getValue: jest.fn().mockReturnValue('source editor content without card')
+            }
+          }
+        }
+      ]);
+
+      (extractCardId as jest.Mock).mockReturnValue(originalCardId);
+      (getImageDataUrlsFromCard as jest.Mock).mockReturnValue([]);
+      (generateCardId as jest.Mock).mockReturnValue(newCardId);
+
+      const cardHtml = `<div class="og-card" card-id="${originalCardId}">content<!--og-card-end ${originalCardId}--></div>`;
+      const targetEditor = {
+        getValue: jest.fn().mockReturnValue(cardHtml),
+        setValue: jest.fn()
+      };
+
+      await service['processCardsInEditor'](targetEditor as any, 'target-note.md');
+
+      expect(mockFileLinkService.removeUserNote).toHaveBeenCalledWith(originalCardId, 'source-note.md');
     });
   });
 

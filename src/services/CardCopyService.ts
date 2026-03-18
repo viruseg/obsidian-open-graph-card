@@ -1,4 +1,4 @@
-import { App, Editor, EditorChange, EventRef } from 'obsidian';
+import { App, Editor, EditorChange, EventRef, TFile } from 'obsidian';
 import { FileLinkService } from './FileLinkService';
 import { ImageService } from './ImageService';
 import { ImageNotesService } from './ImageNotesService';
@@ -378,8 +378,11 @@ export class CardCopyService {
                     this.cutSourceNote.cardId,
                     this.cutSourceNote.notePath
                 );
+                this.cutSourceNote = null;
+            } else if (!this.cutCardIds.has(this.cutSourceNote.cardId)) {
+                // Вставка в ту же заметку обработана, можно очистить состояние cut
+                this.cutSourceNote = null;
             }
-            this.cutSourceNote = null;
         }
     }
 
@@ -419,6 +422,7 @@ export class CardCopyService {
     ): Promise<void> {
         const oldCardId = card.cardId;
         const newCardId = generateCardId();
+        const oldCardLinks = this.fileLinkService.getCardLinks(oldCardId);
 
         // Генерируем новый HTML с обновлённым ID
         const newHtml = this.replaceCardId(card.html, oldCardId, newCardId);
@@ -447,10 +451,86 @@ export class CardCopyService {
 
             // Синхронизируем заметку с изображениями
             await this.imageNotesService.syncNote(newCardId, newHtml);
+
+            // Если карточка была перемещена (вырезана) без editor-cut события,
+            // удаляем сломанные ссылки на исходные заметки
+            if (oldCardLinks) {
+                await this.cleanupMovedSourceLinks(oldCardId, oldCardLinks.userNotePaths, notePath);
+            }
         } finally {
             // Возобновляем обработку
             this.resumeProcessing();
         }
+    }
+
+    /**
+     * Очищает userNotePaths оригинальной карточки, если карточка больше не найдена в исходных заметках.
+     */
+    private async cleanupMovedSourceLinks(cardId: string, sourceNotePaths: string[], currentNotePath: string): Promise<void> {
+        for (const sourceNotePath of sourceNotePaths) {
+            if (sourceNotePath === currentNotePath) {
+                continue;
+            }
+
+            const cardExists = await this.cardExistsInNote(sourceNotePath, cardId);
+            if (!cardExists) {
+                this.fileLinkService.removeUserNote(cardId, sourceNotePath);
+            }
+        }
+    }
+
+    /**
+     * Проверяет наличие карточки с card-id в заметке.
+     */
+    private async cardExistsInNote(notePath: string, cardId: string): Promise<boolean> {
+        const openNoteContent = this.getOpenNoteContent(notePath);
+        if (openNoteContent !== null) {
+            return this.cardIdExistsInContent(openNoteContent, cardId);
+        }
+
+        const file = this.app.vault.getAbstractFileByPath(notePath);
+        if (!(file instanceof TFile)) {
+            return false;
+        }
+
+        try {
+            const content = await this.app.vault.cachedRead(file);
+            return this.cardIdExistsInContent(content, cardId);
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * Возвращает содержимое открытой заметки из редактора, если она сейчас открыта.
+     */
+    private getOpenNoteContent(notePath: string): string | null {
+        const leaves = this.app.workspace.getLeavesOfType('markdown');
+
+        for (const leaf of leaves) {
+            const view = leaf.view as any;
+            const viewFilePath = view?.file?.path;
+            const editor = view?.editor;
+
+            if (viewFilePath !== notePath) {
+                continue;
+            }
+
+            if (editor && typeof editor.getValue === 'function') {
+                return editor.getValue();
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Проверяет наличие card-id в HTML содержимом заметки.
+     */
+    private cardIdExistsInContent(content: string, cardId: string): boolean {
+        const attributePattern = `card-id="${cardId}"`;
+        const commentPattern = `<!--og-card-end ${cardId}-->`;
+        return content.includes(attributePattern) || content.includes(commentPattern);
     }
 
     /**
