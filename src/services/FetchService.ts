@@ -1,9 +1,14 @@
 import { requestUrl } from 'obsidian';
+import { RequestHeadersProvider } from './RequestHeadersProvider';
 
 /**
  * Сервис для выполнения HTTP-запросов
  */
 export class FetchService {
+    constructor(
+        private readonly requestHeadersProvider: RequestHeadersProvider = new RequestHeadersProvider()
+    ) {}
+
     /**
      * Выполняет HTTP-запрос и возвращает HTML-текст
      * @param url - URL для запроса
@@ -11,9 +16,9 @@ export class FetchService {
      * @returns HTML-текст ответа
      */
     async fetchHtml(url: string, headers?: Record<string, string>): Promise<string> {
-        const requestHeaders = headers || {
-            'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36'
+        const requestHeaders = {
+            ...this.requestHeadersProvider.getHtmlHeaders(),
+            ...headers
         };
 
         const response = await requestUrl({ url, headers: requestHeaders });
@@ -27,8 +32,9 @@ export class FetchService {
      * @returns ArrayBuffer с бинарными данными
      */
     async fetchBinary(url: string, headers?: Record<string, string>): Promise<ArrayBuffer> {
-        const requestHeaders = headers || {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        const requestHeaders = {
+            ...this.requestHeadersProvider.getBinaryHeaders(),
+            ...headers
         };
 
         const response = await requestUrl({ url, headers: requestHeaders });

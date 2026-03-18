@@ -419,8 +419,8 @@ export default class OpenGraphPlugin extends Plugin {
             // Получаем подходящий парсер для URL
             const ogParser = parserRegistry.getParser(urlInfo.url);
 
-            // Получаем заголовки от парсера
-            const headers = ogParser.getHeaders();
+            // Получаем дополнительные заголовки для конкретного источника
+            const headers = ogParser.getExtraHeaders();
 
             const html = await this.context.fetchService.fetchHtml(urlInfo.url, headers);
 

@@ -42,9 +42,8 @@ export class SteamParser extends OpenGraphParser {
     /**
      * Возвращает дополнительные заголовки для Steam-запросов
      */
-    getHeaders(): Record<string, string> {
+    getExtraHeaders(): Record<string, string> {
         return {
-            ...super.getHeaders(),
             // Cookie для отображения контента 18+ игр
             'Cookie': 'wants_mature_content=1;path=/'
         };

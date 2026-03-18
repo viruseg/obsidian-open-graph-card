@@ -6,6 +6,7 @@ import { ImageNotesService } from '../services/ImageNotesService';
 import { FileLinkService } from '../services/FileLinkService';
 import { CardCopyService } from '../services/CardCopyService';
 import { IntegrityService } from '../services/IntegrityService';
+import { RequestHeadersProvider } from '../services/RequestHeadersProvider';
 
 interface PluginContextOverrides {
     fetchService?: FetchService;
@@ -28,6 +29,9 @@ export class PluginContext {
 
     /** Сервис для HTTP-запросов */
     readonly fetchService: FetchService;
+
+    /** Провайдер заголовков HTTP-запросов */
+    readonly requestHeadersProvider: RequestHeadersProvider;
 
     /** Сервис для работы с изображениями */
     readonly imageService: ImageService;
@@ -55,7 +59,8 @@ export class PluginContext {
         this.getSettings = getSettings;
 
         // Инициализация сервисов
-        this.fetchService = overrides.fetchService ?? new FetchService();
+        this.requestHeadersProvider = new RequestHeadersProvider();
+        this.fetchService = overrides.fetchService ?? new FetchService(this.requestHeadersProvider);
         this.fileLinkService = overrides.fileLinkService ?? new FileLinkService(app, getFileLinksData, saveFileLinksData);
         this.imageService = overrides.imageService ?? new ImageService(app, this.fetchService);
 
