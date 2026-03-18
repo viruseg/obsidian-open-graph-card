@@ -4,6 +4,7 @@
 
 import { ImageDataUrlInfo } from '../types';
 import { CARD_REGEX } from './constants';
+import { OpenGraphCardScriptResultBlock } from '../types';
 
 /**
  * Парсит HTML-код карточки и возвращает Document и элемент карточки
@@ -374,4 +375,48 @@ export function extractTags(html: string): string[] {
     });
 
     return tags;
+}
+
+/**
+ * Вставляет пользовательские блоки в .og-content после .og-title и перед .og-url
+ */
+export function injectCustomBlocksIntoCard(
+    cardHtml: string,
+    blocks: OpenGraphCardScriptResultBlock[],
+    sanitizer: (html: string) => DocumentFragment
+): string {
+    const parsed = parseCardHtml(cardHtml);
+    if (!parsed) {
+        return cardHtml;
+    }
+
+    const contentEl = parsed.card.querySelector('.og-content');
+    if (!contentEl) {
+        return cardHtml;
+    }
+
+    const titleEl = contentEl.querySelector('.og-title');
+    const urlEl = contentEl.querySelector('.og-url');
+    if (!titleEl || !urlEl) {
+        return cardHtml;
+    }
+
+    let anchor: Element | null = titleEl.nextElementSibling;
+
+    for (const block of blocks) {
+        const container = parsed.doc.createElement('div');
+        container.className = block.className;
+        const fragment = sanitizer(block.htmlContent);
+        container.appendChild(fragment);
+
+        if (anchor && anchor !== urlEl) {
+            contentEl.insertBefore(container, anchor);
+        } else {
+            contentEl.insertBefore(container, urlEl);
+        }
+
+        anchor = container.nextElementSibling;
+    }
+
+    return serializeCard(parsed.card);
 }

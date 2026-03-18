@@ -1,12 +1,11 @@
 import { OpenGraphParser } from './OpenGraphParser';
 import { DefaultParser } from './DefaultParser';
-import { SteamParser } from './SteamParser';
 
 /**
  * Реестр парсеров для выбора подходящего парсера по URL
  */
 export class ParserRegistry {
-    private parsers: OpenGraphParser[] = [new SteamParser()];
+    private parsers: OpenGraphParser[] = [];
     private defaultParser = new DefaultParser();
 
     /**
@@ -21,18 +20,6 @@ export class ParserRegistry {
             return parser || this.defaultParser;
         } catch {
             return this.defaultParser;
-        }
-    }
-
-    /**
-     * Проверяет, является ли URL ссылкой на Steam
-     */
-    isSteamUrl(url: string): boolean {
-        try {
-            const hostname = new URL(url).hostname;
-            return hostname === 'store.steampowered.com';
-        } catch {
-            return false;
         }
     }
 

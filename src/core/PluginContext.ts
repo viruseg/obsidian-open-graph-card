@@ -7,6 +7,7 @@ import { FileLinkService } from '../services/FileLinkService';
 import { CardCopyService } from '../services/CardCopyService';
 import { IntegrityService } from '../services/IntegrityService';
 import { RequestHeadersProvider } from '../services/RequestHeadersProvider';
+import { ScriptService } from '../services/ScriptService';
 
 interface PluginContextOverrides {
     fetchService?: FetchService;
@@ -15,6 +16,7 @@ interface PluginContextOverrides {
     fileLinkService?: FileLinkService;
     cardCopyService?: CardCopyService;
     integrityService?: IntegrityService;
+    scriptService?: ScriptService;
 }
 
 /**
@@ -48,10 +50,15 @@ export class PluginContext {
     /** Сервис для проверки целостности связей при запуске */
     readonly integrityService: IntegrityService;
 
+    /** Сервис пользовательских OpenGraphCardScript скриптов */
+    readonly scriptService: ScriptService;
+
     constructor(
         app: App,
+        pluginId: string,
         getSettings: () => OpenGraphSettings,
         getFileLinksData: () => FileLinksData,
+        saveSettings: () => Promise<void>,
         saveFileLinksData: () => Promise<void>,
         overrides: PluginContextOverrides = {}
     ) {
@@ -77,5 +84,11 @@ export class PluginContext {
             this.imageNotesService
         );
         this.integrityService = overrides.integrityService ?? new IntegrityService(app, this.fileLinkService);
+        this.scriptService = overrides.scriptService ?? new ScriptService(
+            app,
+            pluginId,
+            getSettings,
+            saveSettings
+        );
     }
 }

@@ -15,8 +15,8 @@ export class HtmlBuilder {
     /**
      * Строит полный HTML карточки
      */
-    buildCard(data: CardData, imageData?: ImageData, screenshotData?: ScreenshotData[]): string {
-        const imageHtml = imageData ? this.buildImage(imageData) : '';
+    buildCard(data: CardData, imageData?: ImageData, screenshotData?: ScreenshotData[], includeImage: boolean = true): string {
+        const imageHtml = includeImage && imageData ? this.buildImage(imageData) : '';
         const contentHtml = this.buildContent(data, screenshotData);
 
         return `<div class="${CSS_CLASSES.CARD}" card-id="${this.cardId}">${imageHtml}${contentHtml}<!--og-card-end ${this.cardId}--></div>`;

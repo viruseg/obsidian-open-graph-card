@@ -20,7 +20,8 @@ import {
     replaceCardId,
     findAllCards,
     parseCardHtml,
-    serializeCard
+    serializeCard,
+    injectCustomBlocksIntoCard
 } from '../../src/utils/html';
 import { TEST_NOTE_CONTENT, TEST_CARDS } from '../fixtures/testNote';
 
@@ -317,6 +318,34 @@ describe('Парсинг через DOMParser', () => {
         const serialized = serializeCard(parsed!.card);
         expect(serialized).toContain('og-card');
         expect(serialized).toContain('Dota 2');
+    });
+});
+
+describe('Вставка пользовательских блоков', () => {
+    it('должен вставлять блоки после og-title и до og-url', () => {
+        const input = '<div class="og-card" card-id="og_1"><div class="og-content"><div class="og-title">Title</div><div class="og-description">Desc</div><div class="og-url"><a href="https://example.com">https://example.com</a></div></div><!--og-card-end og_1--></div>';
+        const updated = injectCustomBlocksIntoCard(
+            input,
+            [
+                { className: 'custom-title', htmlContent: '<h1>Custom Title</h1>' },
+                { className: 'custom-body', htmlContent: '<p>Custom Body</p>' }
+            ],
+            (html) => {
+                const template = document.createElement('template');
+                template.innerHTML = html;
+                return template.content;
+            }
+        );
+
+        const titleIndex = updated.indexOf('class="og-title"');
+        const customTitleIndex = updated.indexOf('class="custom-title"');
+        const customBodyIndex = updated.indexOf('class="custom-body"');
+        const urlIndex = updated.indexOf('class="og-url"');
+
+        expect(titleIndex).toBeGreaterThan(-1);
+        expect(customTitleIndex).toBeGreaterThan(titleIndex);
+        expect(customBodyIndex).toBeGreaterThan(customTitleIndex);
+        expect(urlIndex).toBeGreaterThan(customBodyIndex);
     });
 });
 

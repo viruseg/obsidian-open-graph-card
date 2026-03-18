@@ -5,3 +5,5 @@ export { ImageNotesService } from './ImageNotesService';
 export { CardCopyService } from './CardCopyService';
 export { IntegrityService } from './IntegrityService';
 export { PluginDataRepository } from './PluginDataRepository';
+export { ScriptRuntime } from './ScriptRuntime';
+export { ScriptService } from './ScriptService';

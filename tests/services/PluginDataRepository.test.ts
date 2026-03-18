@@ -1,10 +1,20 @@
 import { PluginDataRepository } from '../../src/services/PluginDataRepository';
 import { OpenGraphSettings } from '../../src/types';
 
+const scriptEngineDefaults = {
+    hashWatchEnabled: true,
+    hashWatchIntervalSec: 60,
+    globalAutoUpdateEnabled: true,
+    autoUpdateOnStartup: true,
+    autoUpdateIntervalSec: 3600
+};
+
 describe('PluginDataRepository', () => {
     it('should preserve fileLinks when saving settings', async () => {
         const existing = {
             saveImagesLocally: false,
+            scripts: [],
+            scriptEngine: scriptEngineDefaults,
             fileLinks: {
                 version: 1,
                 cardLinks: {
@@ -21,7 +31,11 @@ describe('PluginDataRepository', () => {
         const saveData = jest.fn().mockResolvedValue(undefined);
         const repository = new PluginDataRepository(loadData, saveData);
 
-        const settings: OpenGraphSettings = { saveImagesLocally: true };
+        const settings: OpenGraphSettings = {
+            saveImagesLocally: true,
+            scripts: [],
+            scriptEngine: scriptEngineDefaults
+        };
         await repository.saveSettings(settings);
 
         expect(saveData).toHaveBeenCalledWith(
@@ -35,6 +49,8 @@ describe('PluginDataRepository', () => {
     it('should preserve settings fields when saving file links', async () => {
         const existing = {
             saveImagesLocally: true,
+            scripts: [],
+            scriptEngine: scriptEngineDefaults,
             fileLinks: {
                 version: 1,
                 cardLinks: {}
@@ -59,6 +75,8 @@ describe('PluginDataRepository', () => {
         expect(saveData).toHaveBeenCalledWith(
             expect.objectContaining({
                 saveImagesLocally: true,
+                scripts: [],
+                scriptEngine: scriptEngineDefaults,
                 fileLinks: {
                     version: 1,
                     cardLinks: {

@@ -1,13 +1,25 @@
-import { Plugin, Editor, MarkdownView, Notice, TFile, TAbstractFile, EventRef } from 'obsidian';
+import { Plugin, Editor, MarkdownView, Notice, TFile, TAbstractFile, sanitizeHTMLToDom } from 'obsidian';
 import { t } from "./i18n";
-import { OpenGraphSettings, DEFAULT_SETTINGS, FileLinksData, FileDeletedEventData, FileRenamedEventData, CardLinks, UserNoteEventData } from './src/types';
+import {
+    OpenGraphSettings,
+    DEFAULT_SETTINGS,
+    FileLinksData,
+    FileDeletedEventData,
+    FileRenamedEventData,
+    UserNoteEventData,
+    CardInfo,
+    UrlInfo,
+    ImageData,
+    CardData,
+    OpenGraphCardScriptResultBlock,
+    ScreenshotData
+} from './src/types';
 import { PluginContext } from './src/core/PluginContext';
 import { PluginDataRepository } from './src/services/PluginDataRepository';
 import { parserRegistry } from './src/parsers';
-import { CardData, ScreenshotData } from './src/types';
-import { ContextMenuHandler, CardInfo, UrlInfo } from './src/ui';
+import { ContextMenuHandler } from './src/ui';
 import { SettingsTab } from './src/ui';
-import { HtmlBuilder, ImageData } from './src/builders';
+import { HtmlBuilder } from './src/builders';
 import { CARD_BOUNDS } from './src/utils/constants';
 import {
     extractCardId,
@@ -18,7 +30,8 @@ import {
     toggleCardOrientation as toggleOrientation,
     updateUserText,
     parseCardHtml,
-    serializeCard
+    serializeCard,
+    injectCustomBlocksIntoCard
 } from './src/utils/html';
 import { generateCardId } from './src/utils/id';
 
@@ -49,8 +62,10 @@ export default class OpenGraphPlugin extends Plugin {
         // Инициализация контекста с сервисами
         this.context = new PluginContext(
             this.app,
+            this.manifest.id,
             () => this.settings,
             () => this.fileLinksData,
+            this.saveSettings.bind(this),
             this.saveFileLinksData.bind(this)
         );
 
@@ -59,6 +74,9 @@ export default class OpenGraphPlugin extends Plugin {
 
         // Инициализация CardCopyService
         this.context.cardCopyService.initialize();
+
+        // Инициализация движка пользовательских скриптов
+        await this.context.scriptService.initialize();
 
         // Запуск проверки целостности через 10 секунд
         this.context.integrityService.scheduleCheck();
@@ -74,7 +92,18 @@ export default class OpenGraphPlugin extends Plugin {
             toggleCardOrientation: this.toggleCardOrientation.bind(this)
         });
 
-        this.addSettingTab(new SettingsTab(this.app, this, this.settings, this.saveSettings.bind(this)));
+        this.addSettingTab(new SettingsTab(
+            this.app,
+            this,
+            this.settings,
+            this.context.scriptService,
+            {
+                saveSettings: this.saveSettings.bind(this),
+                onScriptEngineSettingsChanged: () => {
+                    this.context.scriptService.restartTimers();
+                }
+            }
+        ));
 
         // Отслеживаем глобальный клик ПКМ, чтобы поймать целевой DOM элемент ДО рендера контекстного меню
         this.registerDomEvent(document, 'contextmenu', (e: MouseEvent) => {
@@ -94,6 +123,11 @@ export default class OpenGraphPlugin extends Plugin {
         // Освобождаем ресурсы FileLinkService
         if (this.context?.fileLinkService) {
             this.context.fileLinkService.dispose();
+        }
+
+        // Освобождаем ресурсы ScriptService
+        if (this.context?.scriptService) {
+            this.context.scriptService.dispose();
         }
     }
 
@@ -155,27 +189,27 @@ export default class OpenGraphPlugin extends Plugin {
      */
     private registerFileLinkEvents(): void {
         // Событие удаления одной пользовательской заметки (но есть другие)
-        this.registerEvent(this.app.workspace.on('og-card:user-note-removed' as any, (data: UserNoteEventData) => {
+        this.registerEvent((this.app.workspace as any).on('og-card:user-note-removed', (data: UserNoteEventData) => {
             this.handleUserNoteRemoved(data);
         }));
 
         // Событие удаления последней пользовательской заметки
-        this.registerEvent(this.app.workspace.on('og-card:last-user-note-deleted' as any, (data: UserNoteEventData) => {
+        this.registerEvent((this.app.workspace as any).on('og-card:last-user-note-deleted', (data: UserNoteEventData) => {
             this.handleLastUserNoteDeleted(data);
         }));
 
         // Событие удаления сгенерированной заметки
-        this.registerEvent(this.app.workspace.on('og-card:generated-note-deleted' as any, (data: FileDeletedEventData) => {
+        this.registerEvent((this.app.workspace as any).on('og-card:generated-note-deleted', (data: FileDeletedEventData) => {
             this.handleGeneratedNoteDeleted(data);
         }));
 
         // Событие удаления изображения
-        this.registerEvent(this.app.workspace.on('og-card:image-deleted' as any, (data: FileDeletedEventData) => {
+        this.registerEvent((this.app.workspace as any).on('og-card:image-deleted', (data: FileDeletedEventData) => {
             this.handleImageDeleted(data);
         }));
 
         // Событие переименования файла
-        this.registerEvent(this.app.workspace.on('og-card:file-renamed' as any, (data: FileRenamedEventData) => {
+        this.registerEvent((this.app.workspace as any).on('og-card:file-renamed', (data: FileRenamedEventData) => {
             this.handleFileRenamed(data);
         }));
     }
@@ -244,7 +278,7 @@ export default class OpenGraphPlugin extends Plugin {
             const genNoteFile = this.app.vault.getAbstractFileByPath(data.cardLinks.generatedNotePath);
             if (genNoteFile instanceof TFile) {
                 // Проверяем существование файла перед чтением (защита от ENOENT при массовых операциях)
-                if (!(await this.app.vault.exists(genNoteFile))) {
+                if (!(await (this.app.vault.adapter as any).exists(genNoteFile.path))) {
                     console.log(`OpenGraphPlugin: Generated note no longer exists: ${data.cardLinks.generatedNotePath}`);
                     return;
                 }
@@ -270,7 +304,10 @@ export default class OpenGraphPlugin extends Plugin {
      * Восстанавливает URL изображения в карточке из data-url атрибута
      */
     private async restoreImageUrlInCard(data: FileDeletedEventData): Promise<void> {
-        const userNotePath = data.cardLinks.userNotePath;
+        const userNotePath = data.cardLinks.userNotePaths[0];
+        if (!userNotePath) {
+            return;
+        }
         const userNoteFile = this.app.vault.getAbstractFileByPath(userNotePath);
 
         if (!(userNoteFile instanceof TFile)) {
@@ -416,22 +453,36 @@ export default class OpenGraphPlugin extends Plugin {
         new Notice(t('loading'));
 
         try {
-            // Получаем подходящий парсер для URL
-            const ogParser = parserRegistry.getParser(urlInfo.url);
-
-            // Получаем дополнительные заголовки для конкретного источника
-            const headers = ogParser.getExtraHeaders();
+            const selectedScript = this.context.scriptService.getMatchingScript(urlInfo.url);
+            const headers: Record<string, string> = {};
+            if (selectedScript) {
+                const cookie = this.context.scriptService.getCookie(selectedScript.id, urlInfo.url);
+                if (cookie.trim() !== '') {
+                    headers.Cookie = cookie;
+                }
+            }
 
             const html = await this.context.fetchService.fetchHtml(urlInfo.url, headers);
 
             const domParser = new DOMParser();
             const doc = domParser.parseFromString(html, 'text/html');
 
-            // Используем парсер для извлечения данных
+            // Используем парсер по умолчанию для извлечения данных
+            const ogParser = parserRegistry.getParser(urlInfo.url);
             const cardData = await ogParser.parse(doc, urlInfo.url);
 
             // Добавляем пользовательский текст
             cardData.userText = userText;
+
+            let customBlocks: OpenGraphCardScriptResultBlock[] = [];
+            if (selectedScript) {
+                try {
+                    customBlocks = await this.context.scriptService.processContent(selectedScript.id, urlInfo.url, html);
+                } catch (error) {
+                    console.error('[OG Scripts]', error);
+                    new Notice(t('scriptRuntimeError', selectedScript.name));
+                }
+            }
 
             const sourcePath = view?.file?.path || '';
 
@@ -476,7 +527,16 @@ export default class OpenGraphPlugin extends Plugin {
             // Генерируем HTML с помощью HtmlBuilder
             const cardId = generateCardId();
             const htmlBuilder = new HtmlBuilder(cardId);
-            const htmlBlock = htmlBuilder.buildCard(cardData, imageData, screenshotData);
+            const includeCover = selectedScript ? selectedScript.cover : true;
+            let htmlBlock = htmlBuilder.buildCard(cardData, imageData, screenshotData, includeCover);
+
+            if (customBlocks.length > 0) {
+                htmlBlock = injectCustomBlocksIntoCard(
+                    htmlBlock,
+                    customBlocks,
+                    (blockHtml) => sanitizeHTMLToDom(blockHtml)
+                );
+            }
 
             editor.replaceRange(htmlBlock, urlInfo.from, urlInfo.to);
             // Устанавливаем курсор в начало карточки для предотвращения прыжков прокрутки

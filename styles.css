@@ -123,17 +123,6 @@
     min-height: 1.5em; /* Чтобы в пустой элемент можно было легко кликнуть */
 }
 
-/* Рейтинг Steam */
-.og-rating {
-    font-size: 0.85em;
-    font-weight: 600;
-}
-
-.steamdb_rating_poor { color: var(--color-red); }
-.steamdb_rating_white { color: var(--text-muted); }
-.steamdb_rating_good { color: var(--color-green); }
-.steamdb_rating_average { color: var(--color-orange); }
-
 .og-card-vertical
 {
     flex-direction: column;
