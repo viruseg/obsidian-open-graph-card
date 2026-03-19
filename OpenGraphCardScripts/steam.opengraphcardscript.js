@@ -9,24 +9,24 @@
  */
 
 export const cssStyles = `
-.og-rating {
+.og-steam-rating {
     font-size: 0.85em;
     font-weight: 600;
 }
 
-.steamdb_rating_poor { color: var(--color-red); }
-.steamdb_rating_white { color: var(--text-muted); }
-.steamdb_rating_good { color: var(--color-green); }
-.steamdb_rating_average { color: var(--color-orange); }
+.og-steam-rating-poor { color: var(--color-red); }
+.og-steam-rating-white { color: var(--text-muted); }
+.og-steam-rating-good { color: var(--color-green); }
+.og-steam-rating-average { color: var(--color-orange); }
 
-.og-tags {
+.og-steam-tags {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
     margin-top: 4px;
 }
 
-.og-tag {
+.og-steam-tag {
     background-color: var(--background-modifier-border);
     color: var(--text-normal);
     padding: 2px 8px;
@@ -35,22 +35,22 @@ export const cssStyles = `
     white-space: nowrap;
 }
 
-.og-screenshots {
+.og-steam-screenshots {
     display: flex;
     gap: 6px;
     flex-wrap: wrap;
 }
 
-.og-screenshots::-webkit-scrollbar {
+.og-steam-screenshots::-webkit-scrollbar {
     height: 4px;
 }
 
-.og-screenshots::-webkit-scrollbar-thumb {
+.og-steam-screenshots::-webkit-scrollbar-thumb {
     background: var(--background-modifier-border);
     border-radius: 4px;
 }
 
-.og-screenshot {
+.og-steam-screenshot {
     height: 70px !important;
     width: auto !important;
     border-radius: 4px;
@@ -72,7 +72,7 @@ export function processContent(url, htmlString) {
     const rating = extractRating(doc);
     if (rating) {
         blocks.push({
-            className: 'og-rating',
+            className: 'og-steam-rating',
             htmlContent: `<span class="${rating.className}">${rating.textContent}</span>`
         });
     }
@@ -80,16 +80,16 @@ export function processContent(url, htmlString) {
     const tags = extractTags(doc);
     if (tags.length > 0) {
         blocks.push({
-            className: 'og-tags',
-            htmlContent: tags.map(tag => `<div class="og-tag">${escapeHtml(tag)}</div>`).join('')
+            className: 'og-steam-tags',
+            htmlContent: tags.map(tag => `<div class="og-steam-tag">${escapeHtml(tag)}</div>`).join('')
         });
     }
 
     const screenshots = extractScreenshots(doc, url);
     if (screenshots.length > 0) {
         blocks.push({
-            className: 'og-screenshots',
-            htmlContent: screenshots.map(src => `<img src="${escapeHtml(src)}" class="og-screenshot" />`).join('')
+            className: 'og-steam-screenshots',
+            htmlContent: screenshots.map(src => `<img src="${escapeHtml(src)}" class="og-steam-screenshot" />`).join('')
         });
     }
 
@@ -116,15 +116,15 @@ function extractRating(doc) {
     const average = positiveVotes / totalVotes;
     const score = average - (average - 0.5) * (2 ** -Math.log10(totalVotes + 1));
 
-    let ratingClass = 'steamdb_rating_white';
+    let ratingClass = 'og-steam-rating-white';
     if (totalVotes < 500) {
-        ratingClass = 'steamdb_rating_white';
+        ratingClass = 'og-steam-rating-white';
     } else if (score > 0.74) {
-        ratingClass = 'steamdb_rating_good';
+        ratingClass = 'og-steam-rating-good';
     } else if (score > 0.49) {
-        ratingClass = 'steamdb_rating_average';
+        ratingClass = 'og-steam-rating-average';
     } else {
-        ratingClass = 'steamdb_rating_poor';
+        ratingClass = 'og-steam-rating-poor';
     }
 
     return {
