@@ -397,7 +397,7 @@ export class ScriptService {
             }, hashIntervalSec * 1000);
         }
 
-        if (settings.scriptEngine.globalAutoUpdateEnabled) {
+        if (settings.scriptEngine.globalAutoUpdateEnabled && settings.scriptEngine.autoUpdateTimerEnabled) {
             const updateIntervalSec = Math.max(
                 ScriptService.AUTO_UPDATE_MIN_INTERVAL_SEC,
                 Number(settings.scriptEngine.autoUpdateIntervalSec) || 3600

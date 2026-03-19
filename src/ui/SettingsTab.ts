@@ -132,7 +132,7 @@ export class SettingsTab extends PluginSettingTab {
                     this.callbacks.onScriptEngineSettingsChanged();
                 }));
 
-        new Setting(containerEl)
+        const globalAutoUpdateSetting = new Setting(containerEl)
             .setName(t('globalAutoUpdateName'))
             .setDesc(t('globalAutoUpdateDesc'))
             .addToggle(toggle => toggle
@@ -141,30 +141,63 @@ export class SettingsTab extends PluginSettingTab {
                     this.settings.scriptEngine.globalAutoUpdateEnabled = value;
                     await this.callbacks.saveSettings();
                     this.callbacks.onScriptEngineSettingsChanged();
+                    this.display();
                 }));
 
-        new Setting(containerEl)
+        const autoUpdateTimerEnabledSetting = new Setting(containerEl)
+            .setName(t('autoUpdateTimerEnabledName'))
+            .setDesc(t('autoUpdateTimerEnabledDesc'))
+            .setDisabled(!this.settings.scriptEngine.globalAutoUpdateEnabled)
+            .addToggle(toggle => {
+                toggle.setDisabled(!this.settings.scriptEngine.globalAutoUpdateEnabled);
+                toggle.setValue(this.settings.scriptEngine.autoUpdateTimerEnabled);
+                toggle.onChange(async (value) => {
+                    this.settings.scriptEngine.autoUpdateTimerEnabled = value;
+                    await this.callbacks.saveSettings();
+                    this.callbacks.onScriptEngineSettingsChanged();
+                });
+            });
+
+        if (!this.settings.scriptEngine.globalAutoUpdateEnabled) {
+            autoUpdateTimerEnabledSetting.settingEl.addClass('og-setting-disabled');
+        }
+
+        const autoUpdateOnStartupSetting = new Setting(containerEl)
             .setName(t('autoUpdateOnStartupName'))
             .setDesc(t('autoUpdateOnStartupDesc'))
-            .addToggle(toggle => toggle
-                .setValue(this.settings.scriptEngine.autoUpdateOnStartup)
-                .onChange(async (value) => {
+            .setDisabled(!this.settings.scriptEngine.globalAutoUpdateEnabled)
+            .addToggle(toggle => {
+                toggle.setDisabled(!this.settings.scriptEngine.globalAutoUpdateEnabled);
+                toggle.setValue(this.settings.scriptEngine.autoUpdateOnStartup);
+                toggle.onChange(async (value) => {
                     this.settings.scriptEngine.autoUpdateOnStartup = value;
                     await this.callbacks.saveSettings();
-                }));
+                });
+            });
 
-        new Setting(containerEl)
+        if (!this.settings.scriptEngine.globalAutoUpdateEnabled) {
+            autoUpdateOnStartupSetting.settingEl.addClass('og-setting-disabled');
+        }
+
+        const autoUpdateIntervalSetting = new Setting(containerEl)
             .setName(t('autoUpdateIntervalName'))
             .setDesc(t('autoUpdateIntervalDesc'))
-            .addText(text => text
-                .setPlaceholder('3600')
-                .setValue(String(this.settings.scriptEngine.autoUpdateIntervalSec))
-                .onChange(async (value) => {
+            .setDisabled(!this.settings.scriptEngine.globalAutoUpdateEnabled)
+            .addText(text => {
+                text.setDisabled(!this.settings.scriptEngine.globalAutoUpdateEnabled);
+                text.setPlaceholder('3600');
+                text.setValue(String(this.settings.scriptEngine.autoUpdateIntervalSec));
+                text.onChange(async (value) => {
                     const parsed = Number.parseInt(value, 10);
                     this.settings.scriptEngine.autoUpdateIntervalSec = Number.isFinite(parsed) ? parsed : 3600;
                     await this.callbacks.saveSettings();
                     this.callbacks.onScriptEngineSettingsChanged();
-                }));
+                });
+            });
+
+        if (!this.settings.scriptEngine.globalAutoUpdateEnabled) {
+            autoUpdateIntervalSetting.settingEl.addClass('og-setting-disabled');
+        }
 
         containerEl.createEl('h3', { text: t('scriptsTitle') });
         this.renderScriptInstaller(containerEl);
@@ -285,6 +318,10 @@ export class SettingsTab extends PluginSettingTab {
             autoUpdateLabel.createEl('span', { text: t('scriptAutoUpdateName') });
             const autoUpdateToggle = autoUpdateLabel.createEl('input', { attr: { type: 'checkbox' } }) as HTMLInputElement;
             autoUpdateToggle.checked = script.autoUpdate;
+            autoUpdateToggle.disabled = !this.settings.scriptEngine.globalAutoUpdateEnabled;
+            if (!this.settings.scriptEngine.globalAutoUpdateEnabled) {
+                autoUpdateLabel.addClass('og-setting-disabled');
+            }
             autoUpdateToggle.onchange = async () => {
                 await this.scriptService.setScriptAutoUpdate(script.id, autoUpdateToggle.checked);
                 await this.callbacks.saveSettings();

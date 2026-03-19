@@ -33,6 +33,8 @@ export default {
     hashWatchIntervalDesc: 'Интервал проверки изменения локальных файлов скриптов.',
     globalAutoUpdateName: 'Автообновление скриптов',
     globalAutoUpdateDesc: 'Разрешает автоматическое обновление подключенных OpenGraphCardScript.',
+    autoUpdateTimerEnabledName: 'Автообновление скриптов по таймеру',
+    autoUpdateTimerEnabledDesc: 'Периодическая проверка обновлений скриптов по таймеру.',
     autoUpdateOnStartupName: 'Проверять автообновление при запуске',
     autoUpdateOnStartupDesc: 'Выполнять проверку автообновлений скриптов при старте плагина.',
     autoUpdateIntervalName: 'Интервал автообновления (сек)',

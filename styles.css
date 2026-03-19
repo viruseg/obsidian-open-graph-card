@@ -111,3 +111,15 @@
 {
     text-decoration: underline;
 }
+
+.og-setting-disabled
+{
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.og-setting-disabled input[type="checkbox"]
+{
+    opacity: 0.4;
+    cursor: not-allowed;
+}

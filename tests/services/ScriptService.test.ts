@@ -12,6 +12,7 @@ describe('ScriptService', () => {
                 hashWatchEnabled: true,
                 hashWatchIntervalSec: 60,
                 globalAutoUpdateEnabled: true,
+                autoUpdateTimerEnabled: true,
                 autoUpdateOnStartup: true,
                 autoUpdateIntervalSec: 3600
             }

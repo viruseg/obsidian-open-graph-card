@@ -16,6 +16,7 @@ export interface ScriptEngineSettings {
     hashWatchEnabled: boolean;
     hashWatchIntervalSec: number;
     globalAutoUpdateEnabled: boolean;
+    autoUpdateTimerEnabled: boolean;
     autoUpdateOnStartup: boolean;
     autoUpdateIntervalSec: number;
 }
@@ -31,8 +32,9 @@ export const DEFAULT_SETTINGS: OpenGraphSettings = {
     scripts: [],
     scriptEngine: {
         hashWatchEnabled: true,
-        hashWatchIntervalSec: 60,
+        hashWatchIntervalSec: 3600,
         globalAutoUpdateEnabled: true,
+        autoUpdateTimerEnabled: true,
         autoUpdateOnStartup: true,
         autoUpdateIntervalSec: 3600
     }

@@ -33,6 +33,8 @@ export default {
     hashWatchIntervalDesc: 'Interval for checking local script file changes.',
     globalAutoUpdateName: 'Auto-updating scripts',
     globalAutoUpdateDesc: 'Allows automatic updating of connected OpenGraphCardScript.',
+    autoUpdateTimerEnabledName: 'Timer-based auto-update',
+    autoUpdateTimerEnabledDesc: 'Periodic script update checks by timer.',
     autoUpdateOnStartupName: 'Run auto-update on startup',
     autoUpdateOnStartupDesc: 'Checks script updates on plugin startup.',
     autoUpdateIntervalName: 'Auto-update interval (sec)',
