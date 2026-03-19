@@ -65,5 +65,6 @@ export default {
     scriptEditTitle: 'View and edit script',
     scriptReadError: 'Failed to read script file',
     scriptSaved: 'Script saved',
-    scriptSaveError: 'Script save error'
+    scriptSaveError: 'Script save error',
+    scriptAlreadyInstalled: 'Script with this URL is already installed'
 };

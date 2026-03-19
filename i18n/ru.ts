@@ -65,5 +65,6 @@ export default {
     scriptEditTitle: 'Просмотр и редактирование скрипта',
     scriptReadError: 'Не удалось прочитать файл скрипта',
     scriptSaved: 'Скрипт сохранён',
-    scriptSaveError: 'Ошибка сохранения скрипта'
+    scriptSaveError: 'Ошибка сохранения скрипта',
+    scriptAlreadyInstalled: 'Скрипт с таким URL уже установлен'
 };

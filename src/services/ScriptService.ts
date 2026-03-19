@@ -60,6 +60,12 @@ export class ScriptService {
     }
 
     async installFromUrl(url: string): Promise<void> {
+        const existingScript = this.getSettings().scripts.find(script => script.url === url);
+        if (existingScript) {
+            new Notice(t('scriptAlreadyInstalled'));
+            return;
+        }
+
         const scriptCode = await this.downloadScript(url);
         const metadata = parseScriptMetadata(scriptCode);
         const id = generateCardId();
