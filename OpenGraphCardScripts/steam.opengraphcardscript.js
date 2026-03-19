@@ -1,7 +1,7 @@
 /**
  * ==OpenGraphCardScript==
  * @name Steam Extended Content
- * @version 1.0.0
+ * @version 1.0.1
  * @author Open Graph Card
  * @domains store.steampowered.com
  * @cover true
@@ -18,6 +18,45 @@ export const cssStyles = `
 .steamdb_rating_white { color: var(--text-muted); }
 .steamdb_rating_good { color: var(--color-green); }
 .steamdb_rating_average { color: var(--color-orange); }
+
+.og-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.og-tag {
+    background-color: var(--background-modifier-border);
+    color: var(--text-normal);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    white-space: nowrap;
+}
+
+.og-screenshots {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.og-screenshots::-webkit-scrollbar {
+    height: 4px;
+}
+
+.og-screenshots::-webkit-scrollbar-thumb {
+    background: var(--background-modifier-border);
+    border-radius: 4px;
+}
+
+.og-screenshot {
+    height: 70px !important;
+    width: auto !important;
+    border-radius: 4px;
+    object-fit: cover;
+    margin: 0 !important;
+}
 `;
 
 export function getCookie() {
