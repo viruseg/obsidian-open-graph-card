@@ -5,13 +5,8 @@ export const CSS_CLASSES = {
     CONTENT: 'og-content',
     TITLE: 'og-title',
     DESCRIPTION: 'og-description',
-    TAGS: 'og-tags',
-    TAG: 'og-tag',
-    SCREENSHOTS: 'og-screenshots',
-    SCREENSHOT: 'og-screenshot',
     URL: 'og-url',
-    USER_TEXT: 'og-user-text',
-    RATING: 'og-rating'
+    USER_TEXT: 'og-user-text'
 } as const;
 
 export const CARD_BOUNDS = {

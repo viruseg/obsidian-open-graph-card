@@ -121,7 +121,7 @@ export function getImageSourcesFromCard(html: string): string[] {
         return [];
     }
 
-    const images = parsed.card.querySelectorAll('img.og-image, img.og-screenshot');
+    const images = parsed.card.querySelectorAll('img');
     const sources: string[] = [];
 
     images.forEach(img => {
@@ -145,7 +145,7 @@ export function getImageDataUrlsFromCard(html: string): ImageDataUrlInfo[] {
         return [];
     }
 
-    const images = parsed.card.querySelectorAll('img.og-image, img.og-screenshot');
+    const images = parsed.card.querySelectorAll('img');
     const result: ImageDataUrlInfo[] = [];
 
     images.forEach((img, index) => {
@@ -183,7 +183,7 @@ export function replaceImageInCard(
         return html;
     }
 
-    const images = parsed.card.querySelectorAll('img.og-image, img.og-screenshot');
+    const images = parsed.card.querySelectorAll('img');
     const targetImg = images[elementIndex] as HTMLImageElement | undefined;
 
     if (!targetImg) {

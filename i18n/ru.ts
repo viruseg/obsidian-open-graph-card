@@ -6,7 +6,6 @@ export default {
     loading: 'Загрузка данных...',
     untitled: 'Без заголовка',
     downloadingCover: 'Скачивание обложки...',
-    downloadingScreenshots: 'Скачивание скриншотов ({0} шт.)...',
     cardCreated: 'Карточка успешно создана!',
     loadingError: 'Ошибка при загрузке: {0}',
     settingsTitle: 'Настройки Open Graph Card',

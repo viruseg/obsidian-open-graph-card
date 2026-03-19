@@ -11,8 +11,7 @@ import {
     UrlInfo,
     ImageData,
     CardData,
-    OpenGraphCardScriptResultBlock,
-    ScreenshotData
+    OpenGraphCardScriptResultBlock
 } from './src/types';
 import { PluginContext } from './src/core/PluginContext';
 import { PluginDataRepository } from './src/services/PluginDataRepository';
@@ -486,49 +485,19 @@ export default class OpenGraphPlugin extends Plugin {
 
             const sourcePath = view?.file?.path || '';
 
-            // Обработка изображения
             let imageData: ImageData | undefined;
             if (cardData.image) {
-                let image = cardData.image;
-                const originalImageUrl = image;
-                if (this.settings.saveImagesLocally) {
-                    new Notice(t('downloadingCover'));
-                    const imgFile = await this.downloadAndSaveImage(image, 'og-image', sourcePath);
-                    if (imgFile) {
-                        image = encodeURI(imgFile.path);
-                    }
-                }
                 imageData = {
-                    src: image,
-                    originalUrl: originalImageUrl,
-                    showDataUrl: this.settings.saveImagesLocally
+                    src: cardData.image,
+                    originalUrl: cardData.image,
+                    showDataUrl: false
                 };
             }
 
-            // Обработка скриншотов (Steam)
-            let screenshotData: ScreenshotData[] | undefined;
-            if (cardData.screenshots && cardData.screenshots.length > 0) {
-                screenshotData = cardData.screenshots;
-
-                if (this.settings.saveImagesLocally) {
-                    new Notice(t('downloadingScreenshots', cardData.screenshots.length.toString()));
-                    const downloadPromises = cardData.screenshots.map((s, index) =>
-                        this.downloadAndSaveImage(s.originalUrl, `screenshot-${index}`, sourcePath)
-                    );
-
-                    const files = await Promise.all(downloadPromises);
-                    screenshotData = cardData.screenshots.map((s, i) => ({
-                        originalUrl: s.originalUrl,
-                        localPath: files[i] ? encodeURI(files[i]!.path) : null
-                    })).filter(d => d.localPath !== null || d.originalUrl);
-                }
-            }
-
-            // Генерируем HTML с помощью HtmlBuilder
             const cardId = generateCardId();
             const htmlBuilder = new HtmlBuilder(cardId);
             const includeCover = selectedScript ? selectedScript.cover : true;
-            let htmlBlock = htmlBuilder.buildCard(cardData, imageData, screenshotData, includeCover);
+            let htmlBlock = htmlBuilder.buildCard(cardData, imageData, includeCover);
 
             if (customBlocks.length > 0) {
                 htmlBlock = injectCustomBlocksIntoCard(
@@ -538,34 +507,38 @@ export default class OpenGraphPlugin extends Plugin {
                 );
             }
 
-            editor.replaceRange(htmlBlock, urlInfo.from, urlInfo.to);
-            // Устанавливаем курсор в начало карточки для предотвращения прыжков прокрутки
-            editor.setCursor(urlInfo.from);
-            new Notice(t('cardCreated'));
+            if (this.settings.saveImagesLocally) {
+                const downloadResult = await this.context.imageService.downloadCardImages(htmlBlock, cardId, sourcePath);
+                htmlBlock = downloadResult.updatedHtml;
 
-            // Регистрируем карточку в FileLinkService
-            this.context.fileLinkService.registerCard(cardId, sourcePath);
+                if (downloadResult.result.downloadedCount > 0) {
+                    new Notice(t('imagesDownloaded', downloadResult.result.downloadedCount.toString()));
+                }
 
-            // Добавляем изображения в связи
-            if (imageData?.src && this.settings.saveImagesLocally) {
-                this.context.fileLinkService.addImage(cardId.toString(), imageData.src);
-            }
-            if (screenshotData) {
-                for (const s of screenshotData) {
-                    if (s.localPath) {
-                        this.context.fileLinkService.addImage(cardId.toString(), s.localPath);
-                    }
+                for (const error of downloadResult.result.errors) {
+                    console.error('[OG Plugin] Image download error:', error);
                 }
             }
 
-            // Синхронизируем заметку с изображениями если есть локальные изображения
+            editor.replaceRange(htmlBlock, urlInfo.from, urlInfo.to);
+            editor.setCursor(urlInfo.from);
+            new Notice(t('cardCreated'));
+
+            this.context.fileLinkService.registerCard(cardId, sourcePath);
+
             if (this.settings.saveImagesLocally) {
-                await this.context.imageNotesService.syncNote(cardId.toString(), htmlBlock);
+                const imageDataUrls = getImageDataUrlsFromCard(htmlBlock);
+                for (const img of imageDataUrls) {
+                    if (img.dataUrl && !img.src.startsWith('http')) {
+                        this.context.fileLinkService.addImage(cardId, img.src);
+                    }
+                }
+
+                await this.context.imageNotesService.syncNote(cardId, htmlBlock);
             }
 
-            // Триггерим событие о создании карточки
-            this.app.workspace.trigger('og-card-created' as any, {
-                cardId: cardId.toString(),
+            (this.app.workspace as any).trigger('og-card-created', {
+                cardId,
                 userNotePath: sourcePath
             });
         } catch (error) {

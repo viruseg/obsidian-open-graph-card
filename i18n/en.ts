@@ -6,7 +6,6 @@ export default {
     loading: 'Loading data...',
     untitled: 'Untitled',
     downloadingCover: 'Downloading cover...',
-    downloadingScreenshots: 'Downloading screenshots ({0})...',
     cardCreated: 'Card successfully created!',
     loadingError: 'Loading error: {0}',
     settingsTitle: 'Open Graph Card Settings',

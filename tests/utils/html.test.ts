@@ -222,10 +222,10 @@ describe('getImageSourcesFromCard', () => {
         expect(getImageSourcesFromCard('')).toEqual([]);
     });
 
-    it('should only extract og-image and og-screenshot classes', () => {
+    it('should extract all images regardless of class', () => {
         const html = '<div class="og-card"><img class="other" src="other.png"><img class="og-image" src="og.png"></div>';
         const sources = getImageSourcesFromCard(html);
-        expect(sources).toEqual(['og.png']);
+        expect(sources).toEqual(['other.png', 'og.png']);
     });
 
     it('should extract URLs with complex paths', () => {

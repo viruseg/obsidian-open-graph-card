@@ -19,18 +19,5 @@ export interface CardData {
     description: string;
     image?: string;
     url: string;
-    rating?: RatingData;
-    tags?: string[];
-    screenshots?: ScreenshotData[];
     userText?: string;
-}
-
-export interface RatingData {
-    score: number;
-    className: string;
-}
-
-export interface ScreenshotData {
-    originalUrl: string;
-    localPath: string | null;
 }

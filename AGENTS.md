@@ -26,8 +26,8 @@ Obsidian-плагин для отображения ссылок как Open Gra
 src/
 ├── types/          # TypeScript интерфейсы и типы
 ├── core/           # PluginContext — DI-контейнер
-├── services/       # Бизнес-логика (Fetch, Image, FileLink, etc.)
-├── parsers/        # OpenGraphParser + специфичные парсеры (Steam)
+├── services/       # Бизнес-логика (Fetch, Image, FileLink, ScriptService, etc.)
+├── parsers/        # OpenGraphParser — базовый класс и DefaultParser
 ├── builders/       # CardBuilder, HtmlBuilder
 ├── ui/             # ContextMenuHandler, SettingsTab, modals
 └── utils/          # Утилиты (html, editor, id, constants)
