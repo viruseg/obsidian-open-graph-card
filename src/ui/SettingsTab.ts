@@ -92,6 +92,7 @@ export class SettingsTab extends PluginSettingTab {
 
     display(): void {
         const { containerEl } = this;
+        const scrollTop = this.getScrollContainer()?.scrollTop ?? 0;
         containerEl.empty();
 
         containerEl.createEl('h2', { text: t('settingsTitle') });
@@ -202,6 +203,21 @@ export class SettingsTab extends PluginSettingTab {
         containerEl.createEl('h3', { text: t('scriptsTitle') });
         this.renderScriptInstaller(containerEl);
         this.renderScriptsList(containerEl);
+        
+        requestAnimationFrame(() => {
+            this.getScrollContainer()?.scrollTo(0, scrollTop);
+        });
+    }
+
+    private getScrollContainer(): HTMLElement | null {
+        let el: HTMLElement | null = this.containerEl;
+        while (el) {
+            if (el.scrollTop > 0 || (el.scrollHeight > el.clientHeight && getComputedStyle(el).overflowY !== 'visible')) {
+                return el;
+            }
+            el = el.parentElement;
+        }
+        return null;
     }
 
     private renderScriptInstaller(containerEl: HTMLElement): void {
