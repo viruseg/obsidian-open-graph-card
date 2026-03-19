@@ -221,62 +221,74 @@ export class SettingsTab extends PluginSettingTab {
         }
 
         for (const script of this.settings.scripts) {
-            const scriptContainer = containerEl.createDiv('og-script-settings-item');
-            scriptContainer.createEl('h4', {
-                text: `${script.name} ${script.version}`
+            const card = containerEl.createDiv('og-script-card');
+
+            const headerRow = card.createDiv({ attr: { style: 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;' } });
+            headerRow.createEl('strong', { text: `${script.name} v${script.version}` });
+
+            const buttonsDiv = headerRow.createDiv({ attr: { style: 'display: flex; gap: 6px;' } });
+            buttonsDiv.createEl('button', { text: t('scriptUpdateButton') }).onclick = async () => {
+                try {
+                    await this.scriptService.updateScript(script.id);
+                    await this.callbacks.saveSettings();
+                    this.display();
+                } catch (error) {
+                    console.error('[OG Scripts]', error);
+                    new Notice(t('scriptUpdateError', script.name));
+                }
+            };
+            buttonsDiv.createEl('button', { text: t('scriptViewButton') }).onclick = () => {
+                new ScriptEditorModal(this.app, script.id, this.scriptService, async () => {
+                    await this.callbacks.saveSettings();
+                    this.display();
+                }).open();
+            };
+            const removeBtn = buttonsDiv.createEl('button', { text: t('scriptRemoveButton') });
+            removeBtn.addClass('mod-warning');
+            removeBtn.onclick = async () => {
+                await this.scriptService.removeScript(script.id);
+                await this.callbacks.saveSettings();
+                this.display();
+            };
+
+            const urlLink = card.createEl('a', {
+                text: script.url,
+                attr: { href: '#', style: 'display: block; margin-bottom: 4px; word-break: break-all;' }
             });
-            scriptContainer.createEl('p', { text: `${t('scriptAuthorLabel')}: ${script.author}` });
-            scriptContainer.createEl('p', { text: `${t('scriptDomainsLabel')}: ${script.domains.join(', ')}` });
+            urlLink.onclick = (e) => {
+                e.preventDefault();
+                window.open(script.url, '_blank');
+            };
 
-            new Setting(scriptContainer)
-                .setName(t('scriptEnabledName'))
-                .addToggle(toggle => toggle
-                    .setValue(script.enabled)
-                    .onChange(async (value) => {
-                        await this.scriptService.toggleScriptEnabled(script.id, value);
-                        await this.callbacks.saveSettings();
-                        this.display();
-                    }));
+            card.createEl('div', {
+                text: `${t('scriptAuthorLabel')}: ${script.author}`,
+                attr: { style: 'margin-bottom: 4px;' }
+            });
 
-            new Setting(scriptContainer)
-                .setName(t('scriptAutoUpdateName'))
-                .setDesc(t('scriptAutoUpdateDesc'))
-                .addToggle(toggle => toggle
-                    .setValue(script.autoUpdate)
-                    .onChange(async (value) => {
-                        await this.scriptService.setScriptAutoUpdate(script.id, value);
-                        await this.callbacks.saveSettings();
-                    }));
+            card.createEl('div', {
+                text: `${t('scriptDomainsLabel')}: ${script.domains.join(', ')}`,
+                attr: { style: 'margin-bottom: 12px;' }
+            });
 
-            new Setting(scriptContainer)
-                .addButton(button => button
-                    .setButtonText(t('scriptUpdateButton'))
-                    .onClick(async () => {
-                        try {
-                            await this.scriptService.updateScript(script.id);
-                            await this.callbacks.saveSettings();
-                            this.display();
-                        } catch (error) {
-                            console.error('[OG Scripts]', error);
-                            new Notice(t('scriptUpdateError', script.name));
-                        }
-                    }))
-                .addButton(button => button
-                    .setButtonText(t('scriptViewButton'))
-                    .onClick(() => {
-                        new ScriptEditorModal(this.app, script.id, this.scriptService, async () => {
-                            await this.callbacks.saveSettings();
-                            this.display();
-                        }).open();
-                    }))
-                .addButton(button => button
-                    .setWarning()
-                    .setButtonText(t('scriptRemoveButton'))
-                    .onClick(async () => {
-                        await this.scriptService.removeScript(script.id);
-                        await this.callbacks.saveSettings();
-                        this.display();
-                    }));
+            const togglesRow = card.createDiv({ attr: { style: 'display: flex; gap: 24px; align-items: center;' } });
+
+            const enabledLabel = togglesRow.createDiv({ attr: { style: 'display: flex; align-items: center; gap: 8px;' } });
+            enabledLabel.createEl('span', { text: t('scriptEnabledName') });
+            const enabledToggle = enabledLabel.createEl('input', { attr: { type: 'checkbox' } }) as HTMLInputElement;
+            enabledToggle.checked = script.enabled;
+            enabledToggle.onchange = async () => {
+                await this.scriptService.toggleScriptEnabled(script.id, enabledToggle.checked);
+                await this.callbacks.saveSettings();
+            };
+
+            const autoUpdateLabel = togglesRow.createDiv({ attr: { style: 'display: flex; align-items: center; gap: 8px;' } });
+            autoUpdateLabel.createEl('span', { text: t('scriptAutoUpdateName') });
+            const autoUpdateToggle = autoUpdateLabel.createEl('input', { attr: { type: 'checkbox' } }) as HTMLInputElement;
+            autoUpdateToggle.checked = script.autoUpdate;
+            autoUpdateToggle.onchange = async () => {
+                await this.scriptService.setScriptAutoUpdate(script.id, autoUpdateToggle.checked);
+                await this.callbacks.saveSettings();
+            };
         }
     }
 }

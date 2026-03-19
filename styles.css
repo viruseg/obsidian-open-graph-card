@@ -91,3 +91,23 @@
     border-right: none;
     border-bottom: 1px solid var(--background-modifier-border);
 }
+
+.og-script-card
+{
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 12px;
+    background-color: var(--background-secondary);
+}
+
+.og-script-card a
+{
+    color: var(--text-accent);
+    text-decoration: none;
+}
+
+.og-script-card a:hover
+{
+    text-decoration: underline;
+}
