@@ -96,7 +96,7 @@ try {
 Формат: `og_{timestamp}_{random}` (8 символов). Генерация через `generateCardId()`.
 
 ### Границы карточки
-HTML-маркеры: `<!--og-card-end {cardId}-->`, `<!--og-user-text-end-->`.
+HTML-маркеры: `<!--og-card-end {cardId}-->`.
 
 ### Связи файлов
 Карточка отслеживает:

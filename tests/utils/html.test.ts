@@ -177,8 +177,13 @@ describe('extractUserText', () => {
         expect(extractUserText('')).toBe('');
     });
 
-    it('should handle multiline text', () => {
-        const html = '<div class="og-card"><div class="og-user-text">Line 1\nLine 2\nLine 3</div></div>';
+    it('should handle multiline text with br tags', () => {
+        const html = '<div class="og-card"><div class="og-user-text">Line 1<br>Line 2<br>Line 3</div></div>';
+        expect(extractUserText(html)).toBe('Line 1\nLine 2\nLine 3');
+    });
+
+    it('should handle multiline text with br self-closing tags', () => {
+        const html = '<div class="og-card"><div class="og-user-text">Line 1<br/>Line 2<br/>Line 3</div></div>';
         expect(extractUserText(html)).toBe('Line 1\nLine 2\nLine 3');
     });
 

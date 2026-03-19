@@ -93,7 +93,12 @@ export function extractUserText(html: string): string {
     }
 
     const userTextDiv = parsed.card.querySelector('.og-user-text');
-    return userTextDiv ? userTextDiv.textContent?.trim() || '' : '';
+    if (!userTextDiv) {
+        return '';
+    }
+
+    const innerHtml = userTextDiv.innerHTML;
+    return innerHtml.replace(/<br\s*\/?>/gi, '\n').trim();
 }
 
 /**
@@ -244,7 +249,6 @@ export function updateUserText(html: string, text: string): string {
     }
 
     const existingUserText = parsed.card.querySelector('.og-user-text');
-    const existingEndMarker = parsed.card.querySelector('comment[data-type="og-user-text-end"]');
 
     if (text.trim() === '') {
         if (existingUserText) {
@@ -254,11 +258,11 @@ export function updateUserText(html: string, text: string): string {
     }
 
     if (existingUserText) {
-        existingUserText.textContent = text;
+        existingUserText.innerHTML = escapeHTML(text).replace(/\n/g, '<br>');
     } else {
         const userTextDiv = parsed.doc.createElement('div');
         userTextDiv.className = 'og-user-text';
-        userTextDiv.textContent = text;
+        userTextDiv.innerHTML = escapeHTML(text).replace(/\n/g, '<br>');
 
         const contentDiv = parsed.card.querySelector('.og-content');
         if (contentDiv) {

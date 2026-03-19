@@ -43,6 +43,7 @@ export class HtmlBuilder {
 
     buildUserText(text: string): string {
         if (!text || text.trim() === '') return '';
-        return `<div class="${CSS_CLASSES.USER_TEXT}">${escapeHTML(text)}</div><!--og-user-text-end-->`;
+        const htmlText = escapeHTML(text).replace(/\n/g, '<br>');
+        return `<div class="${CSS_CLASSES.USER_TEXT}">${htmlText}</div>`;
     }
 }
