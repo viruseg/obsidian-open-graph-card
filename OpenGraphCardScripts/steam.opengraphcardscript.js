@@ -1,7 +1,7 @@
 /**
  * ==OpenGraphCardScript==
  * @name Steam Extended Content
- * @version 1.0.1
+ * @version 1.0.2
  * @author Open Graph Card
  * @domains store.steampowered.com
  * @cover true
@@ -59,8 +59,8 @@ export const cssStyles = `
 }
 `;
 
-export function getCookie() {
-    return 'wants_mature_content=1;path=/';
+export function getCookie(url) {
+    return 'wants_mature_content=1;path=/;lastagecheckage=1-January-1948;birthtime=-694317599';
 }
 
 export function processContent(url, htmlString) {
